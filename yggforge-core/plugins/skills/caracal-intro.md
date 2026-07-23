@@ -53,9 +53,9 @@ related:
    3. **强制搬运流程**（降低近似重画概率）：
       1. 用 Read 工具打开
          `knowledge/reference/caracal-easter-egg/caracal-ascii.txt`
-      2. 将 Read 返回的正文（50 行）原样放入彩蛋段的 ```txt … ``` 中
+      2. 将 Read 返回的正文（35 行）原样放入彩蛋段的 ```txt … ``` 中
       3. 不得凭记忆/技能摘要重写；不得「看一眼再画」
-      4. 自检：应为 **50 行**，且每行 **恰好 100 个字符**；不满足则重新 Read 再贴，仍禁止手改
+      4. 自检：应为 **35 行**，且每行 **恰好 64 个字符**；不满足则重新 Read 再贴，仍禁止手改
    4. 另给 PNG / SVG 的本机绝对路径：`file:///` 链接 + 纯文本路径，供点击打开原图。
       **不要**再给 `caracal-ascii.txt` 的链接（正文已贴在上方代码围栏）。
    5. **禁止** Markdown `![](...)`、HTML `<img>`、data URI 内嵌。
@@ -76,7 +76,7 @@ related:
 > 额外为你介绍一下这种冷门而迷人的猫科动物。
 
 ```txt
-<此处必须是 Read(caracal-ascii.txt) 的原文，50 行 × 每行 100 字符；禁止改写>
+<此处必须是 Read(caracal-ascii.txt) 的原文，35 行 × 每行 64 字符；禁止改写>
 ```
 
 **像素原图（点击打开）**
@@ -128,6 +128,6 @@ related:
 
 - 触发条件由 `ygg-rule-caracal-easter-egg` 规则定义；本技能负责输出格式。
 - 曾只给链接、不贴字符画，不符合「使用者要在回复里看到画」的产品意图，已改回强制贴出。
-- LLM 对长 Unicode 阴影块仍有近似重画风险；缓解：先 Read 再逐字搬运 + 50×100 自检 + opaque blob 禁令（禁止理解/修改）。
+- LLM 对长 Unicode 阴影块仍有近似重画风险；缓解：先 Read 再逐字搬运 + 35×64 自检 + opaque blob 禁令（禁止理解/修改）。
 - 标签设计：`caracal` / `intro`；不引入 `yggforge-*` 同义 tag。
 - 这是内置测试：验证 `ygg associate` 经 tag BFS 发现跨 `knowledge/` 与 `plugins/` 的关联条目。
