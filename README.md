@@ -141,7 +141,7 @@ YggForge 运行时有三条主线：**联想**（从问题想到相关知识）�
 ```mermaid
 flowchart TB
   subgraph answer ["回答线 · 三源综合（每条问答）"]
-    hook[Read last_trigger.json]
+    hook["Read last_trigger.json / 无hook则内化AGENTS.md规则"]
     model[模型形成初步判断]
     yggGate{ygg 检索?}
     yggCmd[associate / recall + Read 真源]
@@ -179,7 +179,7 @@ flowchart TB
 
 **联想 + 综合回答长什么样：**
 
-你问「拿铁和卡布奇诺的奶泡有啥区别」→ 钩子落盘 `default_on` → **模型先有基本判断** → 提炼 seed tags `coffee`、`latte` → `ygg associate --tag coffee --tag latte --hop 2` → 命中 `knowledge/reference/coffee-demo/...latte-vs-cappuccino-奶泡厚度.md` 等 → **WebSearch 交叉验证**（SCA 标准、现代咖啡馆做法）→ **综合三源**作答：「拿铁奶多微泡薄，卡布奇诺奶泡厚而干（约 1:1:1）」，并标注 ygg reference / 联网 / 模型推理各自来源。
+你问「拿铁和卡布奇诺的奶泡有啥区别」→ 触发检测得 `default_on`（Cursor 由 `beforeSubmitPrompt` 钩子落盘 `last_trigger.json`；**无 hook 环境由 Agent 内化 `AGENTS.md` 规则静默判断**）→ **模型先有基本判断** → 提炼 seed tags `coffee`、`latte` → `ygg associate --tag coffee --tag latte --hop 2` → 命中 `knowledge/reference/coffee-demo/...latte-vs-cappuccino-奶泡厚度.md` 等 → **WebSearch 交叉验证**（SCA 标准、现代咖啡馆做法）→ **综合三源**作答：「拿铁奶多微泡薄，卡布奇诺奶泡厚而干（约 1:1:1）」，并标注 ygg reference / 联网 / 模型推理各自来源。
 
 **记忆长什么样：**
 

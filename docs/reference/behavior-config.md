@@ -65,7 +65,7 @@ yggforge-core/config/channels.yaml               # channel 字典
 | `core_write.operations.tag_suggest_apply` | `ask` | 应用 tag 建议 |
 | `core_write.operations.tag_weight_authority_writeback` | `deny` | 统计回写权威 weight |
 | `deps.install` | `ask` | `ygg doctor --fix-deps` / `ygg deploy --install-deps` 自动 pip install 缺失依赖 |
-| `features.default_trigger_on_chat` | **true** | 对话默认触发 ygg 路由（部署默认，由强制钩子执行）。`true` 时每条用户消息提交前由 `beforeSubmitPrompt` 钩子自动跑 `scripts/hooks/trigger_detector.py`，按 `action` 路由到 ygg 记/想/思/运维对应功能；`false` 时仅显式 `ygg ...` 或命中高/中置信度模式时触发（省 token）。是否真正执行由各命令 behavior 门禁决定。本机覆盖：`behavior.local.yaml` 的 `features.default_trigger_on_chat`。详见 [triggers.md](triggers.md) 第 6 节 |
+| `features.default_trigger_on_chat` | **true** | 对话默认触发 ygg 路由（部署默认）。`true` 时：**有 `beforeSubmitPrompt` 钩子的环境（Cursor）**每条用户消息提交前自动跑 `scripts/hooks/trigger_detector.py`，按 `action` 路由到 ygg 记/想/思/运维对应功能；**无钩子环境（KimiClaw / OpenClaw 等云端 Agent）由 Agent 读 `AGENTS.md`「KimiClaw/OpenClaw 集成 (无 IDE Hooks 环境)」内化触发规则静默判断**（等价机制，不依赖 `last_trigger.json`）。`false` 时仅显式 `ygg ...` 或命中高/中置信度模式时触发（省 token）。是否真正执行由各命令 behavior 门禁决定。本机覆盖：`behavior.local.yaml` 的 `features.default_trigger_on_chat`。详见 [triggers.md](triggers.md) 第 6 节 |
 | `semantic_retrieval` | false | 语义检索（预留） |
 | `progressive_load` | false | 渐进加载（预留） |
 | `channel_filter` | true | channel 规范化过滤 |

@@ -437,6 +437,7 @@ ygg deploy link --scope project openclaw      # → <repo>/.openclaw/AGENTS.md
 - 核心包：`~/.openclaw/yggforge-core` → `yggforge-core/`
 - 薄入口：`~/.openclaw/AGENTS.md`（OpenClaw 全局配置在 `~/.openclaw/openclaw.json`，身份在 `~/.openclaw/agents/<agent>/agent.md`；YggForge 不接管其 persona 体系）；项目级 `ygg deploy --scope project openclaw` → `<repo>/.openclaw/AGENTS.md`
 - 仓库侧投影源：`yggforge-core/profiles/openclaw/`
+- **无 IDE 钩子**：OpenClaw 无 `beforeSubmitPrompt`，触发检测由 Agent 读 `AGENTS.md`「KimiClaw/OpenClaw 集成 (无 IDE Hooks 环境)」内化规则静默判断（不依赖 `last_trigger.json`，等价替代 Cursor 钩子）。KimiClaw 同此机制。
 
 ## 7. 统一部署脚本
 

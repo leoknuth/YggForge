@@ -137,6 +137,8 @@ features:
   tag_cooccur_suggest: true
   dream_community_detect: false
   # 对话默认触发 ygg（部署默认开启）：true=每条用户消息都先过 trigger_detector 判断是否走 ygg 路由
+  #   有 IDE 钩子环境（Cursor）由 beforeSubmitPrompt 钩子落盘 last_trigger.json；
+  #   无钩子环境（KimiClaw/OpenClaw 等云端 Agent）由 Agent 读 AGENTS.md「KimiClaw/OpenClaw 集成」内化触发规则静默判断（不依赖 last_trigger.json）
   #   false=仅在显式 `ygg ...` 或命中高/中置信度模式时触发（省 token；本机 local 覆盖关闭）
   #   覆盖位置：yggforge-runtime/config/behavior.local.yaml 的 features.default_trigger_on_chat
   #   详见 docs/reference/triggers.md「默认触发模式」、docs/reference/behavior-config.md
