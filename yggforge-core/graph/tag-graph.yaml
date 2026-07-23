@@ -202,10 +202,6 @@ tags:
       - { tag: ygg, weight: 1.0 }
       - { tag: web-search, weight: 1.0 }
       - { tag: synthesis, weight: 1.0 }
-  mycapital:
-    related:
-      - { tag: simu, weight: 1.0 }
-      - { tag: workflow, weight: 1.0 }
   path:
     related:
       - { tag: interaction, weight: 1.0 }
@@ -262,7 +258,6 @@ tags:
   simu:
     related:
       - { tag: troubleshooting, weight: 1.0 }
-      - { tag: mycapital, weight: 1.0 }
       - { tag: workflow, weight: 1.0 }
   structure:
     related:

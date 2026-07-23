@@ -23,7 +23,7 @@
 - Git 操作纪律
 - 错题本晋升规则
 
-目录深度：相对 `knowledge/` 不超过 5 级（含文件名）。主题域可用子目录（如 `mycapital/`）。
+目录深度：相对 `knowledge/` 不超过 5 级（含文件名）。主题域可用子目录（如 `cpp-style/`）。
 
 不建议直接放：
 
@@ -41,7 +41,7 @@ front matter 必填 `type: rule`；`when_to_read` / `related` 写 YAML。需要 
 
 允许按**主题 / 组织边界**建子目录，例如：
 
-- `mycapital/`：茂源内部框架相关规则（simu 等）
+- `cpp-style/`：C++ 编码风格规则
 
 子目录内可再放 `README.md` 说明该组规则的适用范围。
 
@@ -59,8 +59,8 @@ front matter 必填 `type: rule`；`when_to_read` / `related` 写 YAML。需要 
 - `git-workflow.md`
 - `markdown-docs.md`
 - `memory-promotion.md`
-- `mycapital/simu-libbarraopt-warning.md`
-- `mycapital/simu-quote-rate-ignore.md`
+- `cpp-style/*.md`
+- `performance-checklist.md`
 - `path-expression.md`
 - `performance-checklist.md`
 - `python-style.md`

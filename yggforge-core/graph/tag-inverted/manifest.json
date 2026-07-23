@@ -1,8 +1,8 @@
 {
   "format": "tsv-sorted-shards-v1",
   "key_order": "lexicographic",
-  "total_records": 63,
-  "total_bytes": 4346,
+  "total_records": 61,
+  "total_bytes": 4052,
   "shard_max_bytes": 8388608,
   "shard_max_lines": 100000,
   "full_load_max_bytes": 1073741824,
@@ -10,8 +10,8 @@
     {
       "file": "_all.tsv",
       "prefix": "",
-      "lines": 63,
-      "bytes": 4346,
+      "lines": 61,
+      "bytes": 4052,
       "first_key": "agent",
       "last_key": "ygg"
     }

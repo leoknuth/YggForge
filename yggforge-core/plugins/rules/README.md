@@ -36,7 +36,7 @@ YggForge 自身的**机制规则**（描述 YggForge 如何运作：`default-tri
 ## 后续使用准则
 
 - 机制规则（描述 YggForge 自身如何运作）→ 留在 `knowledge/rules/`，被 hooks 按路径读取。
-- 领域规则（描述如何做领域工作，如 `cpp-style`、`git-workflow`、`mycapital/*`）→ 留在
+- 领域规则（描述如何做领域工作，如 `cpp-style`、`git-workflow`）→ 留在
   `knowledge/rules/`，继续走晋升模型。
 - 可投影规则包（挑选出来要批量投影给某 Agent 的规则集合）→ 放 `plugins/rules/`，
   由 `ygg deploy` 按各 Agent 原生格式投影。

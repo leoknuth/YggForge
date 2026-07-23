@@ -66,7 +66,7 @@
 
 - **创建时间**：`yyyymmddhhmmss`；新建取当前时间，已有文件优先用 git 首次加入时间。放在最前，便于 catalog 按时间字典序与前缀分片。
 - **目录首字母（定长 6）**：相对 `yggforge-core` 路径中，各层目录名首字符（不含文件名）；仅 ASCII 字母（小写）/数字；中文等跳过；超长截断，不足右侧补 `$`
-  - 例：`knowledge/rules/mycapital/foo.md` → `krm$$$`
+  - 例：`knowledge/rules/cpp-style/foo.md` → `krc$$$`
 - **标题词首（定长 8）**：英文/数字词取首字符小写；连续中文段跳过；超长截断，不足补 `$`
   - 例：`C++ Style Baseline` → `csb$$$$$`
 - **4 位随机**：`[a-z0-9]{4}`，避免同秒冲突
@@ -93,7 +93,7 @@
 ## 4. 目录分层约定
 
 - 真源放在 `knowledge/{rules,templates,lessons,decisions,sources}/`
-- 按**大类 + 少量主题域**组织（如 `rules/mycapital/`）
+- 按**大类 + 少量主题域**组织（如 `rules/cpp-style/`）
 - 相对 `knowledge/` 的路径深度 **不超过 5**（含文件名）
 - 路径在索引中存相对仓库根的 posix 路径，不写机器绝对路径
 

@@ -30,8 +30,6 @@
 - `knowledge/rules/cpp-style.md`
 - `knowledge/rules/python-style.md`
 - `knowledge/rules/markdown-docs.md`
-- `knowledge/rules/mycapital/simu-libbarraopt-warning.md`
-- `knowledge/rules/mycapital/simu-quote-rate-ignore.md`
 - `knowledge/rules/performance-checklist.md`
 - `knowledge/rules/standing-preference.md`
 - `knowledge/templates/README.md`

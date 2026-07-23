@@ -377,7 +377,7 @@ Windows 无符号链接特权时：目录回退为 junction；单文件尝试 sy
 3. 可选：在 **Customize → Rules** 加一条 User Rule，要求会话开始用 Read 工具读取核心包内 `.mdc`
 4. 项目级部署 `ygg deploy --scope project cursor` → `<repo>/.cursor/rules/*.mdc`（官方原生路径，自动加载）
 
-领域规则（如 `mycapital/*`）不宜长期 `alwaysApply` 全局投放；优先按需检索或项目级 globs。
+领域规则（如 `cpp-style/*`）不宜长期 `alwaysApply` 全局投放；优先按需检索或项目级 globs。
 
 #### 项目级部署（`--scope project`）
 

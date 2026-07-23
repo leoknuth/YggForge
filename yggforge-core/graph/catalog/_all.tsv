@@ -13,8 +13,6 @@
 20260714144840-kr$$$$-$$$$$$$$-oq6u	knowledge/rules/compatibility-defaults.md	rule	默认实现策略与注释语言	comments|compatibility	20260701165030-kr$$$$-cb$$$$$$-qppv|20260701163140-kr$$$$-csb$$$$$-vhsf	high
 20260714144840-kr$$$$-m$$$$$$$-b8kj	knowledge/rules/markdown-docs.md	rule	Markdown 文档规范	markdown|docs		medium
 20260714144840-kr$$$$-psb$$$$$-qr00	knowledge/rules/python-style.md	rule	Python Style Baseline	python|style	20260714144840-kr$$$$-$$$$$$$$-oq6u|20260701165030-kr$$$$-cb$$$$$$-qppv	high
-20260714144840-krm$$$-sqr$$$$$-rgvc	knowledge/rules/mycapital/simu-quote-rate-ignore.md	rule	simu / quote_rate 忽略原则	simu|troubleshooting|mycapital	20260714150521-krm$$$-sbl$$$$$-exqi	high
-20260714150521-krm$$$-sbl$$$$$-exqi	knowledge/rules/mycapital/simu-libbarraopt-warning.md	rule	simu / BarraOpt（libbarraopt）误报忽略	simu|troubleshooting|mycapital	20260714144840-krm$$$-sqr$$$$$-rgvc	high
 20260714151437-kr$$$$-$$$$$$$$-m5c6	knowledge/rules/secrets-placeholder-boundary.md	rule	密钥占位与私密凭据隔离	secrets|deploy|mcp		high
 20260722194924-krc$$$-$$$$$$$$-gncm	knowledge/reference/coffee-demo/20260722-194736-latte-vs-cappuccino-奶泡厚度.md	reference	拿铁与卡布奇诺的奶泡区别	coffee|latte|cappuccino|milk		unset
 20260722194924-krc$$$-$$$$$$$$-q6hz	knowledge/reference/coffee-demo/20260722-194735-cappuccino-1-1-1-与厚奶泡.md	reference	卡布奇诺比例与奶泡	coffee|cappuccino|milk		unset
