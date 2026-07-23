@@ -1,0 +1,41 @@
+# 复制到：yggforge-runtime/config/behavior.local.yaml
+# 只需写要覆盖的键。交互选 always allow 时也会自动写到该文件。
+
+version: 1
+
+# 单机本地：不做仓库 git 同步
+deploy:
+  git_sync_after: deny
+git:
+  update: deny
+  push: deny
+
+# 观察记忆直接写；rules 仍禁止自动晋升
+memory:
+  record_observation: allow
+  mirror_to_lessons_inbox: ask
+  kinds:
+    rule: deny
+
+promote:
+  to_lesson: ask
+  to_rule: ask
+  auto_to_rule: deny
+  # 用户说「以后一直这样」时 remember --as rule 可自动晋升；保持 allow 即可
+  auto_to_rule_on_standing: allow
+
+dream:
+  mode: allow
+  write_report: allow
+
+core_write:
+  operations:
+    tag_weight_update: allow
+    # 权威回写仍建议保持 deny，除非你明确要校准写回 tag-graph
+    tag_weight_authority_writeback: deny
+
+# 对话默认触发 ygg：部署默认 true（每条用户消息都先过 trigger_detector 判断是否走 ygg 路由）
+#   这里设 false 即对本机关闭「默认触发」（回到仅显式 `ygg ...` 或高/中置信度模式触发，省 token）
+#   详见 docs/reference/triggers.md「默认触发模式」
+features:
+  default_trigger_on_chat: false

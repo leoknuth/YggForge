@@ -1,0 +1,20 @@
+{
+  "format": "tsv-sorted-shards-v1",
+  "key_order": "lexicographic",
+  "total_records": 63,
+  "total_bytes": 4346,
+  "shard_max_bytes": 8388608,
+  "shard_max_lines": 100000,
+  "full_load_max_bytes": 1073741824,
+  "files": [
+    {
+      "file": "_all.tsv",
+      "prefix": "",
+      "lines": 63,
+      "bytes": 4346,
+      "first_key": "agent",
+      "last_key": "ygg"
+    }
+  ],
+  "banner": "# 由 ygg graph build 自动生成，请勿手改。"
+}

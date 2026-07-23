@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "comment": "复制到 yggforge-runtime/config/core_write.local.json 后按需修改。modes: allow|ask|deny|warn|audit|dry_run",
+  "default": "ask",
+  "operations": {
+    "tag_add": "warn",
+    "tag_relate": "audit",
+    "tag_weight_update": "allow",
+    "tag_suggest_apply": "ask"
+  }
+}

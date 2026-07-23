@@ -1,0 +1,39 @@
+---
+description: 综合回答策略——ygg 检索 + 模型推理 + 联网搜索（强制，不依赖 associate 命中）
+alwaysApply: true
+---
+
+# 综合回答策略（三源综合）
+
+完整真源：`knowledge/rules/standing-preference.md`。本文件为 Cursor `alwaysApply` 薄投影，确保每条消息都注入，不依赖 `associate` 碰巧命中。
+
+## 适用范围
+
+- **适用**：所有需要向用户回答问题的场景。
+- **例外**：纯运维执行（如 `ygg deploy`、`ygg sync`、`ygg status`）按命令语义执行即可；用户明确「不要联网」「静默模式」时跳过联网与 ygg 检索；纯问候（如「你好」「在吗」）可仅用模型简短回应。
+
+## 必须综合的三源
+
+1. **模型自身推理**：先形成初步理解与判断框架。
+2. **ygg 检索**：按 `last_trigger.json` 的 `action` 路由（`associate` / `recall` 等）；`skip` 时可跳过 ygg 以省 token。
+3. **联网搜索**：使用 WebSearch / WebFetch；事实类、时效敏感、外部标准/最佳实践类问题**必须**搜索。
+
+**不得仅凭 ygg 联想/检索结果作答。**
+
+## 权重（由 agent 按上下文自行判断）
+
+| 问题性质 | 提高权重 |
+|----------|----------|
+| 时效敏感、事实易变 | 联网搜索 |
+| 仓库规范、历史决策、本机记忆 | ygg 检索 |
+| 推理、权衡、方案设计 | 模型自身思考 |
+
+## 与 `default_on` / `skip` 的配合
+
+- `default_on`：模型推理 → ygg associate/recall → Read 命中真源 → **联网搜索** → 综合作答。
+- `skip`：跳过 ygg；仍执行模型推理 + **按需联网** + 综合作答。
+- 读不到 `last_trigger.json`：同 `skip`（fail open）。
+
+## 输出要求
+
+最终回答应标注各部分信息的**来源**与**置信度**，便于人类核验。ygg 命中、联网结果、模型推理须能区分。

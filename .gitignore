@@ -1,0 +1,46 @@
+# 本机运行时与可再生产物：默认全部忽略，只保留说明文件
+
+# --- yggforge-generated：可再生产物 ---
+# 注意：图机器索引（catalog + tag-inverted）已移至 yggforge-core/graph/，
+# 随核心包部署，使 associate 在部署后仍可命中。此处仅留 rendered/imports/manifests/scratch/indexes。
+# indexes/ = 人类 by-tag 浏览视图，本地可选导出，不入库
+yggforge-generated/**
+!yggforge-generated/.gitignore
+!yggforge-generated/README.md
+
+# --- yggforge-runtime：本机可变状态 ---
+yggforge-runtime/**
+!yggforge-runtime/.gitignore
+!yggforge-runtime/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Secrets
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 仓库根 .cursor/ 是 ygg deploy --scope project 的本地投影产物（非源，真源在
+# yggforge-core/profiles/cursor/）；勿入库，避免侵蚀 core/profiles 边界（三庭合议 P0-C）
+/.cursor/
+
+# 误落在仓库根的临时文件（规范位置：yggforge-generated/scratch/）
+.tmp-*
+/tmp/
+
+# 技能 CLI 安装产物（本机工具，不入库）；下列内置 skill 例外需版本化
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/find-skills/
+!.agents/skills/find-skills/**
+!.agents/skills/accelint-readme-writer/
+!.agents/skills/accelint-readme-writer/**
+skills-lock.json

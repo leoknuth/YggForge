@@ -1,0 +1,15 @@
+---
+description: 三庭合议（ICJ）触发提示——多模型独立→互评→基座裁庭
+globs:
+alwaysApply: false
+---
+
+# 三庭合议
+
+用户说「三庭合议 / ICJ / 合议三轮 / model council」或要求「先各自思考、再互相评议、最后你汇总」时：
+
+1. Read 并执行 `yggforge-core/plugins/skills/tri-chamber-deliberation.md`
+2. 遵守 `yggforge-core/plugins/rules/tri-chamber-deliberation.md` 的不变量
+3. 默认强制联网；初庭隔离；仅裁庭可改主仓（若用户要求落地）
+
+不要把单次 `/best-of-n` 当成完整三庭合议。

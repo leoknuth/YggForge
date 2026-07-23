@@ -1,0 +1,39 @@
+# YggForge 最小健康检查（GitLab CI）
+# 不依赖 PyYAML / 外部服务；失败即阻断合并。
+
+stages:
+  - lint
+
+variables:
+  PYTHONUTF8: "1"
+
+.ygg_base:
+  image: python:3.12-alpine
+  before_script:
+    - python -V
+    - apk add --no-cache git >/dev/null
+
+compileall:
+  extends: .ygg_base
+  stage: lint
+  script:
+    - python -m compileall -q yggforge-core/scripts
+
+graph_check:
+  extends: .ygg_base
+  stage: lint
+  script:
+    - python yggforge-core/scripts/ygg.py graph check
+
+graph_freshness:
+  extends: .ygg_base
+  stage: lint
+  script:
+    - python yggforge-core/scripts/ygg.py graph build
+    - git diff --exit-code yggforge-core/graph/catalog/ yggforge-core/graph/tag-inverted/
+
+mdc_check:
+  extends: .ygg_base
+  stage: lint
+  script:
+    - python yggforge-core/scripts/ygg.py project mdc --check

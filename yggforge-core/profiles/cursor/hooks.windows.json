@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "py -X utf8 hooks/ygg_session_protocol.py",
+        "timeout": 10
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "py -X utf8 hooks/ygg_pre_submit.py",
+        "timeout": 15
+      }
+    ]
+  }
+}

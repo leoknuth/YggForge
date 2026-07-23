@@ -1,0 +1,188 @@
+{
+  "cursor": {
+    "enabled": true,
+    "profile": "cursor",
+    "core_bundle": {
+      "name": "yggforge_core",
+      "source": ".",
+      "targets": {
+        "windows": "~/.cursor/yggforge-core",
+        "linux": "~/.cursor/yggforge-core",
+        "darwin": "~/.cursor/yggforge-core"
+      }
+    },
+    "mappings": [
+      {
+        "name": "rules",
+        "source": "profiles/cursor/rules",
+        "project_targets": {
+          "windows": "<project>/.cursor/rules",
+          "linux": "<project>/.cursor/rules",
+          "darwin": "<project>/.cursor/rules"
+        }
+      },
+      {
+        "name": "skills",
+        "source": "profiles/cursor/skills",
+        "targets": {
+          "windows": "~/.cursor/skills",
+          "linux": "~/.cursor/skills",
+          "darwin": "~/.cursor/skills"
+        },
+        "project_targets": {
+          "windows": "<project>/.cursor/skills",
+          "linux": "<project>/.cursor/skills",
+          "darwin": "<project>/.cursor/skills"
+        }
+      },
+      {
+        "name": "hooks",
+        "source": "profiles/cursor/hooks",
+        "targets": {
+          "windows": "~/.cursor/hooks",
+          "linux": "~/.cursor/hooks",
+          "darwin": "~/.cursor/hooks"
+        },
+        "project_targets": {
+          "windows": "<project>/.cursor/hooks",
+          "linux": "<project>/.cursor/hooks",
+          "darwin": "<project>/.cursor/hooks"
+        }
+      },
+      {
+        "name": "hooks_config",
+        "sources": {
+          "windows": "profiles/cursor/hooks.windows.json",
+          "linux": "profiles/cursor/hooks.json",
+          "darwin": "profiles/cursor/hooks.json"
+        },
+        "targets": {
+          "windows": "~/.cursor/hooks.json",
+          "linux": "~/.cursor/hooks.json",
+          "darwin": "~/.cursor/hooks.json"
+        },
+        "project_targets": {
+          "windows": "<project>/.cursor/hooks.json",
+          "linux": "<project>/.cursor/hooks.json",
+          "darwin": "<project>/.cursor/hooks.json"
+        }
+      }
+    ]
+  },
+  "opencode": {
+    "enabled": true,
+    "profile": "opencode",
+    "core_bundle": {
+      "name": "yggforge_core",
+      "source": ".",
+      "targets": {
+        "windows": "~/.config/opencode/yggforge-core",
+        "linux": "~/.config/opencode/yggforge-core",
+        "darwin": "~/.config/opencode/yggforge-core"
+      }
+    },
+    "mappings": [
+      {
+        "name": "agents_entry",
+        "source": "profiles/opencode/AGENTS.md",
+        "targets": {
+          "windows": "~/.config/opencode/AGENTS.md",
+          "linux": "~/.config/opencode/AGENTS.md",
+          "darwin": "~/.config/opencode/AGENTS.md"
+        },
+        "project_targets": {
+          "windows": "<project>/AGENTS.md",
+          "linux": "<project>/AGENTS.md",
+          "darwin": "<project>/AGENTS.md"
+        }
+      }
+    ]
+  },
+  "codex": {
+    "enabled": true,
+    "profile": "codex",
+    "core_bundle": {
+      "name": "yggforge_core",
+      "source": ".",
+      "targets": {
+        "windows": "~/.codex/yggforge-core",
+        "linux": "~/.codex/yggforge-core",
+        "darwin": "~/.codex/yggforge-core"
+      }
+    },
+    "mappings": [
+      {
+        "name": "agents_entry",
+        "source": "profiles/codex/AGENTS.md",
+        "targets": {
+          "windows": "~/.codex/AGENTS.md",
+          "linux": "~/.codex/AGENTS.md",
+          "darwin": "~/.codex/AGENTS.md"
+        },
+        "project_targets": {
+          "windows": "<project>/AGENTS.md",
+          "linux": "<project>/AGENTS.md",
+          "darwin": "<project>/AGENTS.md"
+        }
+      }
+    ]
+  },
+  "claude": {
+    "enabled": true,
+    "profile": "claude",
+    "core_bundle": {
+      "name": "yggforge_core",
+      "source": ".",
+      "targets": {
+        "windows": "~/.claude/yggforge-core",
+        "linux": "~/.claude/yggforge-core",
+        "darwin": "~/.claude/yggforge-core"
+      }
+    },
+    "mappings": [
+      {
+        "name": "agents_entry",
+        "source": "profiles/claude/AGENTS.md",
+        "targets": {
+          "windows": "~/.claude/AGENTS.md",
+          "linux": "~/.claude/AGENTS.md",
+          "darwin": "~/.claude/AGENTS.md"
+        },
+        "project_targets": {
+          "windows": "<project>/AGENTS.md",
+          "linux": "<project>/AGENTS.md",
+          "darwin": "<project>/AGENTS.md"
+        }
+      }
+    ]
+  },
+  "openclaw": {
+    "enabled": true,
+    "profile": "openclaw",
+    "core_bundle": {
+      "name": "yggforge_core",
+      "source": ".",
+      "targets": {
+        "windows": "~/.openclaw/yggforge-core",
+        "linux": "~/.openclaw/yggforge-core",
+        "darwin": "~/.openclaw/yggforge-core"
+      }
+    },
+    "mappings": [
+      {
+        "name": "agents_entry",
+        "source": "profiles/openclaw/AGENTS.md",
+        "targets": {
+          "windows": "~/.openclaw/AGENTS.md",
+          "linux": "~/.openclaw/AGENTS.md",
+          "darwin": "~/.openclaw/AGENTS.md"
+        },
+        "project_targets": {
+          "windows": "<project>/.openclaw/AGENTS.md",
+          "linux": "<project>/.openclaw/AGENTS.md",
+          "darwin": "<project>/.openclaw/AGENTS.md"
+        }
+      }
+    ]
+  }
+}

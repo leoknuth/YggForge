@@ -1,0 +1,184 @@
+# =============================================================================
+# Channel 预设词典（沟通入口 / Agent 来源）
+# =============================================================================
+# id 为规范名（写入 front matter 的 channel 字段）。
+# aliases 用于 normalize（大小写不敏感）。
+# category: chat | agent | ide | other
+# 列表请用多行 `-`，便于无 PyYAML 时的最小解析器。
+# =============================================================================
+
+version: 1
+
+channels:
+  local:
+    label: 本机
+    category: other
+    aliases:
+      - 本地
+      - localhost
+
+  unknown:
+    label: 未知来源
+    category: other
+    aliases:
+      - 未知
+      - other
+      - misc
+
+  wechat:
+    label: 微信
+    category: chat
+    aliases:
+      - 微信
+      - weixin
+      - wx
+
+  dingtalk:
+    label: 钉钉
+    category: chat
+    aliases:
+      - 钉钉
+      - dingding
+      - ding
+
+  feishu:
+    label: 飞书
+    category: chat
+    aliases:
+      - 飞书
+      - lark
+
+  slack:
+    label: Slack
+    category: chat
+    aliases: []
+
+  discord:
+    label: Discord
+    category: chat
+    aliases: []
+
+  telegram:
+    label: Telegram
+    category: chat
+    aliases:
+      - tg
+
+  qq:
+    label: QQ
+    category: chat
+    aliases: []
+
+  teams:
+    label: Microsoft Teams
+    category: chat
+    aliases:
+      - ms-teams
+      - msteams
+
+  email:
+    label: 邮件
+    category: chat
+    aliases:
+      - mail
+
+  cursor:
+    label: Cursor
+    category: agent
+    aliases: []
+
+  kimi:
+    label: Kimi
+    category: agent
+    aliases:
+      - moonshot
+      - 月之暗面
+
+  opencode:
+    label: OpenCode
+    category: agent
+    aliases:
+      - open-code
+
+  openclaw:
+    label: OpenClaw
+    category: agent
+    aliases:
+      - open-claw
+      - kimi-claw
+      - kimiclaw
+
+  codex:
+    label: Codex
+    category: agent
+    aliases:
+      - openai-codex
+
+  claude:
+    label: Claude
+    category: agent
+    aliases:
+      - anthropic
+
+  chatgpt:
+    label: ChatGPT
+    category: agent
+    aliases:
+      - gpt
+      - openai-chat
+
+  gemini:
+    label: Gemini
+    category: agent
+    aliases:
+      - bard
+
+  copilot:
+    label: GitHub Copilot
+    category: agent
+    aliases:
+      - github-copilot
+
+  windsurf:
+    label: Windsurf
+    category: ide
+    aliases:
+      - codeium
+
+  gitlab:
+    label: GitLab
+    category: other
+    aliases: []
+
+  github:
+    label: GitHub
+    category: other
+    aliases:
+      - gh
+
+  jira:
+    label: Jira
+    category: other
+    aliases: []
+
+  review:
+    label: 代码评审
+    category: other
+    aliases:
+      - code-review
+      - pr-review
+
+  work:
+    label: 工作语境
+    category: other
+    aliases:
+      - 工作
+      - office
+
+  private:
+    label: 私聊/个人
+    category: other
+    aliases:
+      - 私聊
+      - personal
+      - private-chat

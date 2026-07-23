@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "comment": "兼容层。优先使用 behavior.defaults.yaml 的 core_write 段（见 docs/reference/behavior-config.md）。modes: allow|ask|deny|warn|audit|dry_run。",
+  "modes": {
+    "allow": "直接写入",
+    "ask": "每次询问用户",
+    "deny": "拒绝写入",
+    "warn": "写入并打印警告",
+    "audit": "写入并记本机审计日志",
+    "dry_run": "只预览不写入"
+  },
+  "default": "ask",
+  "operations": {
+    "tag_add": "ask",
+    "tag_relate": "ask",
+    "tag_weight_update": "ask",
+    "tag_suggest_apply": "ask",
+    "tag_weight_authority_writeback": "deny"
+  }
+}

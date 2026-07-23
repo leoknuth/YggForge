@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "gitlab_internal": {
+      "command": "~/.nvm/versions/node/v18.20.8/bin/npx",
+      "args": [
+        "-y",
+        "gitlab-mcp@0.1.5"
+      ],
+      "env": {
+        "GITLAB_READ_ONLY_MODE": "true",
+        "GITLAB_API_URL": "http://YOUR_GITLAB_HOST/api/v4",
+        "GITLAB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN"
+      }
+    },
+    "fetch": {
+      "command": "~/.nvm/versions/node/v18.20.8/bin/npx",
+      "args": [
+        "-y",
+        "@tokenizin/mcp-npx-fetch"
+      ]
+    }
+  }
+}

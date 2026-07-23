@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "git": {
+    "remote": "origin",
+    "branch": null
+  },
+  "gitlab": {
+    "api_url": "",
+    "token_env": "YGG_GITLAB_TOKEN"
+  },
+  "push_safety": {
+    "enable_warning": true,
+    "protected_branch_patterns": [
+      "main",
+      "master"
+    ],
+    "high_access_threshold": 40,
+    "on_risky_protected_branch": "ask_user",
+    "on_unable_to_check_permissions": "ask_user"
+  },
+  "mode_actions": {
+    "link": {
+      "import_before_sync": false,
+      "import_before_push": false,
+      "preview_only": false
+    },
+    "copy": {
+      "import_before_sync": true,
+      "import_before_push": true,
+      "preview_only": false
+    },
+    "render": {
+      "import_before_sync": true,
+      "import_before_push": true,
+      "preview_only": false
+    }
+  },
+  "targets": {
+    "cursor": {
+      "enabled": true
+    },
+    "opencode": {
+      "enabled": true
+    },
+    "codex": {
+      "enabled": true
+    },
+    "claude": {
+      "enabled": true
+    },
+    "openclaw": {
+      "enabled": true
+    }
+  }
+}

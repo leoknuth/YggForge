@@ -1,0 +1,73 @@
+# Tag 同义词表（与 tag-graph 同属 graph/）
+#
+# key = 标准保留标签
+# values = 遇到时归并到 key 的同义/近义词
+#
+# 用法：ygg remember --tags ... 与 ygg tag / associate 会读取本文件做归一化。
+
+version: 1
+
+# tag 标签规范语言：en=英文，zh=中文。影响 seed tag 提炼与新增 tag 的语言。
+# 查询：ygg tag --language。缺省 en。详见 knowledge/rules/seed-tag-language.md。
+language: en
+
+synonyms:
+  cpp:
+    - "c++"
+    - cxx
+    - cplusplus
+  javascript:
+    - js
+    - ecmascript
+  typescript:
+    - ts
+  python:
+    - py
+  machine-learning:
+    - ml
+    - 机器学习
+    - 深度学习
+    - deep-learning
+  ai:
+    - 人工智能
+    - llm
+    - 大模型
+  database:
+    - db
+    - 数据库
+  memory:
+    - 内存
+  git:
+    - github
+    - gitlab
+  latte:
+    - 拿铁
+  cappuccino:
+    - 卡布奇诺
+  coffee:
+    - 咖啡
+  milk:
+    - 奶泡
+    - 牛奶
+  espresso:
+    - 意式浓缩
+    - 浓缩
+  brewing:
+    - 萃取
+    - 冲煮
+  pour-over:
+    - 手冲
+  caracal:
+    - 狞猫
+    - desert-lynx
+    - desert lynx
+    - 沙漠猞猁
+  deliberation:
+    - 三庭合议
+    - icj
+    - tri-chamber
+    - tri-chamber-deliberation
+    - 合议三轮
+    - independent-critique-judge
+    - model-council
+    - debate-council

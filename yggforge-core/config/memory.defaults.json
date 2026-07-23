@@ -1,0 +1,24 @@
+{
+  "backend": {
+    "type": "file",
+    "raw_root": "memory/raw",
+    "index_root": "memory/index",
+    "mirror_to_lessons_inbox": true,
+    "lessons_inbox_root": "knowledge/lessons/inbox"
+  },
+  "search": {
+    "default_limit": 5,
+    "type_priority": {
+      "rule": 40,
+      "template": 30,
+      "decision": 20,
+      "lesson": 15,
+      "source": 12,
+      "distilled-source": 8
+    },
+    "runtime_priority": {
+      "lesson-draft": 10,
+      "raw": 5
+    }
+  }
+}

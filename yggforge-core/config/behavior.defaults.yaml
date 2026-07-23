@@ -1,0 +1,143 @@
+# =============================================================================
+# YggForge 行为与可选特性配置（仓库默认）
+# =============================================================================
+# 本文件支持注释，是「可配置自动化」的权威默认。
+#
+# 覆盖顺序（后者覆盖前者）：
+#   1) yggforge-core/config/behavior.defaults.yaml   ← 本文件（可提交）
+#   2) yggforge-runtime/config/behavior.local.yaml  ← 本机偏好（不入库）
+#
+# -----------------------------------------------------------------------------
+# 模式语义（配置里只写三字根 + 进阶项；不要写 always_allow）
+# -----------------------------------------------------------------------------
+#   ask       每次询问。交互选 [y]es = 仅本次；选 [a]lways allow = 写入 local 为 allow
+#   allow     以后不再询问，直接执行（交互语「always allow」持久化后的配置值）
+#   deny      拒绝 / 跳过（git 类操作为静默跳过；写操作为拒绝）
+#   warn      执行并打警告（进阶）
+#   audit     执行并写审计日志（进阶）
+#   dry_run   只预览不执行（进阶）
+#
+# 别名：YAML 里写 always_allow / always-allow 会被规范成 allow（便于可读）。
+#
+# 首次部署建议：关键操作为 ask；单机不配远程时把 git.* / deploy.git_sync_after 设为 deny。
+# =============================================================================
+
+version: 1
+
+default_mode: ask
+
+ask:
+  offer_always_allow: true
+  offer_always_deny: true
+  persist_to: local
+
+# -----------------------------------------------------------------------------
+# 部署后是否对本仓库做 git 更新
+# deny = 部署后只在本机用（记忆写 runtime 即可，不拉不推）
+# -----------------------------------------------------------------------------
+deploy:
+  git_sync_after: deny
+
+# -----------------------------------------------------------------------------
+# 对本仓库的 git 操作（ygg sync / ygg push）
+# deny = 不必做；ask = 每次问；allow = 直接做
+# -----------------------------------------------------------------------------
+git:
+  update: ask
+  push: ask
+
+# -----------------------------------------------------------------------------
+# 记忆写入（runtime observation / 镜像到 knowledge）
+# -----------------------------------------------------------------------------
+memory:
+  record_observation: ask
+  mirror_to_lessons_inbox: ask
+  kinds:
+    observation: ask
+    lesson_inbox: ask
+    lesson: ask
+    # 强规范：禁止静默写入 rules（含自动路径）
+    rule: deny
+    template: ask
+    decision: ask
+    distilled-source: ask
+
+# -----------------------------------------------------------------------------
+# 晋升 promote：inbox → 正式知识层
+# -----------------------------------------------------------------------------
+promote:
+  to_lesson: ask
+  to_reference: ask
+  to_rule: ask
+  to_template: ask
+  to_decision: ask
+  # 自动/批处理路径晋升到 rules（dream/批处理无显式站立意图；默认 deny）
+  auto_to_rule: deny
+  # 用户显式站立偏好（「以后一直这样」「写成规则」或 remember --as rule）→ 自动晋升 rules
+  # 这本身就算人类确认，与「进入 rules/ 需人确认」一致；批处理仍走上面的 auto_to_rule
+  auto_to_rule_on_standing: allow
+  # 客观知识自动晋升到 reference：LLM 判断为纯客观知识/信息 + 标签联想查重无雷同 → 默认放行
+  # 仍受 --auto 触发的 associate 查重约束；有雷同命中时脚本自动跳过（不写）
+  auto_to_reference: allow
+  # 经验性 lesson 自动晋升（非客观知识；通常人审，此处保留 allow 供 --auto --to lesson）
+  auto_to_lesson: allow
+
+# -----------------------------------------------------------------------------
+# Dream：巩固扫描 / 报告
+# -----------------------------------------------------------------------------
+dream:
+  enabled: true
+  auto_run: deny
+  mode: ask
+  write_report: ask
+  period: 7d
+  frequency: weekly
+  intensity: normal
+  depth: 1
+  max_items_per_section: 10
+
+# -----------------------------------------------------------------------------
+# 依赖自动安装（ygg doctor --fix-deps）：pip install 缺失依赖
+# ask = 每次询问；allow = 直接补装；deny = 仅提示不装
+# -----------------------------------------------------------------------------
+deps:
+  install: ask
+
+# -----------------------------------------------------------------------------
+# 对 yggforge-core 真源的结构性写入
+# -----------------------------------------------------------------------------
+core_write:
+  default: ask
+  operations:
+    tag_add: ask
+    tag_relate: ask
+    # 人工 set-weight / relate 改权
+    tag_weight_update: ask
+    tag_suggest_apply: ask
+    # 统计/共现等「回写权威 weight」到 tag-graph.yaml（默认更严）
+    tag_weight_authority_writeback: deny
+
+# -----------------------------------------------------------------------------
+# Channel：是否启用规范化 / 过滤（词典见 config/channels.yaml）
+# -----------------------------------------------------------------------------
+channel:
+  # enforce | fallback | off
+  # enforce = 未知 channel 拒绝写入；fallback = 归一到 unknown；off = 原样写入
+  unknown_policy: fallback
+  default: local
+
+# -----------------------------------------------------------------------------
+# 可选特性开关（默认关闭的增强能力）
+# -----------------------------------------------------------------------------
+features:
+  semantic_retrieval: false
+  progressive_load: false
+  channel_filter: true
+  time_decay_ranking: false
+  tag_cooccur_suggest: true
+  dream_community_detect: false
+  # 对话默认触发 ygg（部署默认开启）：true=每条用户消息都先过 trigger_detector 判断是否走 ygg 路由
+  #   false=仅在显式 `ygg ...` 或命中高/中置信度模式时触发（省 token；本机 local 覆盖关闭）
+  #   覆盖位置：yggforge-runtime/config/behavior.local.yaml 的 features.default_trigger_on_chat
+  #   详见 docs/reference/triggers.md「默认触发模式」、docs/reference/behavior-config.md
+  default_trigger_on_chat: true

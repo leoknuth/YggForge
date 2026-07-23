@@ -1,0 +1,327 @@
+# Tag 邻接图（权威、可修改）
+#
+# 本文件由 ygg tag / remember 维护；也可人工编辑。
+
+version: 1
+
+defaults:
+  hop: 2
+  max_nodes: 64
+
+tags:
+  agent:
+    related:
+      - { tag: workflow, weight: 0.80 }
+      - { tag: memory, weight: 0.78 }
+      - { tag: cursor, weight: 0.70 }
+      - { tag: ygg, weight: 0.75 }
+      - { tag: git, weight: 0.72 }
+      - { tag: deliberation, weight: 0.80 }
+  answer-strategy:
+    related:
+      - { tag: ygg, weight: 0.85 }
+      - { tag: web-search, weight: 0.80 }
+      - { tag: model-reasoning, weight: 0.80 }
+      - { tag: synthesis, weight: 0.80 }
+  associate:
+    related:
+      - { tag: ygg, weight: 0.70 }
+  brewing:
+    related:
+      - { tag: coffee, weight: 1.0 }
+      - { tag: espresso, weight: 1.0 }
+      - { tag: pour-over, weight: 1.0 }
+  cappuccino:
+    related:
+      - { tag: coffee, weight: 1.0 }
+      - { tag: milk, weight: 1.0 }
+      - { tag: espresso, weight: 1.0 }
+  caracal:
+    related:
+      - { tag: feline, weight: 1.0 }
+      - { tag: wildlife, weight: 1.0 }
+      - { tag: mammal, weight: 1.0 }
+  ci:
+    related:
+      - { tag: git, weight: 0.70 }
+  clang-format:
+    related:
+      - { tag: formatting, weight: 1.0 }
+      - { tag: cpp, weight: 1.0 }
+  coding:
+    related:
+      - { tag: discipline, weight: 1.0 }
+      - { tag: style, weight: 1.0 }
+  coffee:
+    related:
+      - { tag: espresso, weight: 1.0 }
+      - { tag: cappuccino, weight: 1.0 }
+      - { tag: latte, weight: 1.0 }
+      - { tag: brewing, weight: 1.0 }
+      - { tag: pour-over, weight: 1.0 }
+  command-chaining:
+    related:
+      - { tag: powershell, weight: 1.0 }
+      - { tag: windows, weight: 1.0 }
+      - { tag: shell, weight: 1.0 }
+      - { tag: compatibility, weight: 1.0 }
+  comments:
+    related:
+      - { tag: style, weight: 1.0 }
+      - { tag: provenance, weight: 1.0 }
+  compatibility:
+    related:
+      - { tag: powershell, weight: 1.0 }
+      - { tag: windows, weight: 1.0 }
+      - { tag: shell, weight: 1.0 }
+      - { tag: command-chaining, weight: 1.0 }
+  cpp:
+    related:
+      - { tag: style, weight: 0.75 }
+      - { tag: comments, weight: 0.70 }
+      - { tag: performance, weight: 0.85 }
+      - { tag: hpc, weight: 0.82 }
+      - { tag: workflow, weight: 0.70 }
+      - { tag: python, weight: 0.65 }
+  cursor:
+    related:
+      - { tag: agent, weight: 1.0 }
+      - { tag: migration, weight: 1.0 }
+      - { tag: routing, weight: 0.70 }
+  decisions:
+    related:
+      - { tag: structure, weight: 1.0 }
+  deploy:
+    related:
+      - { tag: workflow, weight: 0.75 }
+      - { tag: mcp, weight: 0.72 }
+      - { tag: secrets, weight: 0.70 }
+      - { tag: hooks, weight: 0.70 }
+  deliberation:
+    related:
+      - { tag: agent, weight: 0.80 }
+      - { tag: workflow, weight: 0.75 }
+      - { tag: ygg, weight: 0.70 }
+  discipline:
+    related:
+      - { tag: coding, weight: 1.0 }
+      - { tag: agent, weight: 1.0 }
+  docs:
+    related:
+      - { tag: markdown, weight: 1.0 }
+  editorconfig:
+    related:
+      - { tag: formatting, weight: 1.0 }
+      - { tag: clang-format, weight: 1.0 }
+  espresso:
+    related:
+      - { tag: coffee, weight: 1.0 }
+      - { tag: grind, weight: 1.0 }
+      - { tag: brewing, weight: 1.0 }
+  feline:
+    related:
+      - { tag: caracal, weight: 1.0 }
+      - { tag: mammal, weight: 1.0 }
+      - { tag: wildlife, weight: 0.8 }
+  formatting:
+    related:
+      - { tag: style, weight: 1.0 }
+      - { tag: editorconfig, weight: 1.0 }
+  git:
+    related:
+      - { tag: workflow, weight: 0.80 }
+      - { tag: agent, weight: 0.72 }
+      - { tag: secrets, weight: 0.70 }
+      - { tag: memory, weight: 0.70 }
+  grind:
+    related:
+      - { tag: espresso, weight: 1.0 }
+      - { tag: brewing, weight: 1.0 }
+  hpc:
+    related:
+      - { tag: performance, weight: 0.80 }
+      - { tag: cpp, weight: 0.82 }
+  hooks:
+    related:
+      - { tag: ygg, weight: 0.72 }
+      - { tag: deploy, weight: 0.70 }
+  hugepage:
+    related:
+      - { tag: memory, weight: 0.75 }
+      - { tag: performance, weight: 0.70 }
+  interaction:
+    related:
+      - { tag: path, weight: 1.0 }
+      - { tag: agent, weight: 1.0 }
+  latte:
+    related:
+      - { tag: coffee, weight: 1.0 }
+      - { tag: milk, weight: 1.0 }
+  linux:
+    related:
+      - { tag: shell, weight: 0.70 }
+      - { tag: windows, weight: 0.65 }
+  mammal:
+    related:
+      - { tag: feline, weight: 1.0 }
+      - { tag: wildlife, weight: 1.0 }
+      - { tag: caracal, weight: 0.9 }
+  lessons:
+    related:
+      - { tag: memory, weight: 1.0 }
+      - { tag: promotion, weight: 1.0 }
+      - { tag: migration, weight: 1.0 }
+  markdown:
+    related:
+      - { tag: docs, weight: 1.0 }
+  mcp:
+    related:
+      - { tag: secrets, weight: 0.75 }
+      - { tag: deploy, weight: 0.72 }
+      - { tag: agent, weight: 0.60 }
+  memory:
+    related:
+      - { tag: lessons, weight: 0.80 }
+      - { tag: promotion, weight: 0.75 }
+      - { tag: agent, weight: 0.78 }
+      - { tag: git, weight: 0.70 }
+      - { tag: workflow, weight: 0.72 }
+      - { tag: ygg, weight: 0.65 }
+  migration:
+    related:
+      - { tag: lessons, weight: 1.0 }
+      - { tag: structure, weight: 1.0 }
+      - { tag: cursor, weight: 1.0 }
+  milk:
+    related:
+      - { tag: cappuccino, weight: 1.0 }
+      - { tag: latte, weight: 1.0 }
+  model-reasoning:
+    related:
+      - { tag: answer-strategy, weight: 1.0 }
+      - { tag: ygg, weight: 1.0 }
+      - { tag: web-search, weight: 1.0 }
+      - { tag: synthesis, weight: 1.0 }
+  mycapital:
+    related:
+      - { tag: simu, weight: 1.0 }
+      - { tag: workflow, weight: 1.0 }
+  path:
+    related:
+      - { tag: interaction, weight: 1.0 }
+      - { tag: docs, weight: 1.0 }
+  performance:
+    related:
+      - { tag: cpp, weight: 0.85 }
+      - { tag: hpc, weight: 0.80 }
+      - { tag: troubleshooting, weight: 0.70 }
+      - { tag: workflow, weight: 0.72 }
+      - { tag: memory, weight: 0.60 }
+      - { tag: ygg, weight: 0.60 }
+  pour-over:
+    related:
+      - { tag: coffee, weight: 1.0 }
+      - { tag: brewing, weight: 1.0 }
+  powershell:
+    related:
+      - { tag: windows, weight: 1.0 }
+      - { tag: shell, weight: 1.0 }
+      - { tag: command-chaining, weight: 1.0 }
+      - { tag: compatibility, weight: 1.0 }
+  promotion:
+    related:
+      - { tag: memory, weight: 1.0 }
+      - { tag: lessons, weight: 1.0 }
+  provenance:
+    related:
+      - { tag: comments, weight: 1.0 }
+  python:
+    related:
+      - { tag: style, weight: 0.75 }
+      - { tag: comments, weight: 0.70 }
+      - { tag: cpp, weight: 0.65 }
+  review:
+    related:
+      - { tag: git, weight: 0.70 }
+      - { tag: ci, weight: 0.65 }
+  routing:
+    related:
+      - { tag: cursor, weight: 0.70 }
+      - { tag: ygg, weight: 0.65 }
+  secrets:
+    related:
+      - { tag: deploy, weight: 1.0 }
+      - { tag: mcp, weight: 1.0 }
+      - { tag: git, weight: 1.0 }
+  shell:
+    related:
+      - { tag: powershell, weight: 1.0 }
+      - { tag: windows, weight: 1.0 }
+      - { tag: command-chaining, weight: 1.0 }
+      - { tag: compatibility, weight: 1.0 }
+  simu:
+    related:
+      - { tag: troubleshooting, weight: 1.0 }
+      - { tag: mycapital, weight: 1.0 }
+      - { tag: workflow, weight: 1.0 }
+  structure:
+    related:
+      - { tag: migration, weight: 1.0 }
+      - { tag: decisions, weight: 1.0 }
+  style:
+    related:
+      - { tag: cpp, weight: 1.0 }
+      - { tag: python, weight: 1.0 }
+      - { tag: comments, weight: 1.0 }
+      - { tag: formatting, weight: 1.0 }
+  synthesis:
+    related:
+      - { tag: answer-strategy, weight: 1.0 }
+      - { tag: ygg, weight: 1.0 }
+      - { tag: web-search, weight: 1.0 }
+      - { tag: model-reasoning, weight: 1.0 }
+  troubleshooting:
+    related:
+      - { tag: simu, weight: 1.0 }
+      - { tag: performance, weight: 1.0 }
+  trigger:
+    related:
+      - { tag: ygg, weight: 0.75 }
+  web-search:
+    related:
+      - { tag: answer-strategy, weight: 1.0 }
+      - { tag: ygg, weight: 1.0 }
+      - { tag: model-reasoning, weight: 1.0 }
+      - { tag: synthesis, weight: 1.0 }
+  wildlife:
+    related:
+      - { tag: caracal, weight: 1.0 }
+      - { tag: mammal, weight: 1.0 }
+      - { tag: feline, weight: 0.8 }
+  windows:
+    related:
+      - { tag: powershell, weight: 1.0 }
+      - { tag: shell, weight: 1.0 }
+      - { tag: command-chaining, weight: 1.0 }
+      - { tag: compatibility, weight: 1.0 }
+  workflow:
+    related:
+      - { tag: git, weight: 0.80 }
+      - { tag: agent, weight: 0.80 }
+      - { tag: deploy, weight: 0.75 }
+      - { tag: memory, weight: 0.72 }
+      - { tag: performance, weight: 0.72 }
+      - { tag: cpp, weight: 0.70 }
+      - { tag: ygg, weight: 0.70 }
+  ygg:
+    related:
+      - { tag: answer-strategy, weight: 0.85 }
+      - { tag: web-search, weight: 0.80 }
+      - { tag: model-reasoning, weight: 0.80 }
+      - { tag: synthesis, weight: 0.80 }
+      - { tag: agent, weight: 0.75 }
+      - { tag: workflow, weight: 0.70 }
+      - { tag: memory, weight: 0.65 }
+      - { tag: deliberation, weight: 0.70 }
+      - { tag: trigger, weight: 0.75 }
+      - { tag: performance, weight: 0.60 }

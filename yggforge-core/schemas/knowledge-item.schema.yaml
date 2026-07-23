@@ -1,0 +1,180 @@
+# knowledge-item front matter schema（分层）
+# 校验：scripts/knowledge/schema.py
+# 解析：scripts/lib/front_matter.py
+#
+# 原则：可枚举 / 结构化的元数据进 YAML；叙述性正文留在 Markdown。
+# 每条条目必须有 type（rule|lesson|reference|decision|template|source|distilled-source|skill|mcp-server|hook）。
+#
+# 注意：runtime 记忆类型 observation（写在 yggforge-runtime/memory/raw/）
+# 不在本 schema 的 type 枚举中，不参与 knowledge graph 索引校验。
+# plugins/ 下的 skill/mcp-server/hook 条目复用本 schema，由 graph_scan 一并索引，
+# 使 ygg associate 能联想发现 YggForge 内部插件（智能插件管理器）。
+version: 2
+type: knowledge-item
+
+description: >
+  单文件 Markdown + YAML front matter。type 决定专有字段；
+  路径可作缺省推断，但写入时必须显式带 type。
+  observation 仅用于 runtime 记忆，见 docs/concepts/memory-and-association.md。
+
+required_for_index:
+  - id
+  - title
+  - status
+  - type
+
+recommended_when_active:
+  - confidence
+  - last_reviewed
+  - tags
+
+# 公共字段（所有 type）
+common:
+  id: {type: string}
+  title: {type: string}
+  title_refined: {type: string}
+  type:
+    type: enum
+    values: [rule, lesson, reference, decision, template, source, distilled-source, skill, mcp-server, hook]
+  status:
+    type: enum
+    values: [draft, active, deprecated, recorded, accepted, proposed, superseded]
+  confidence:
+    type: enum
+    values: [low, medium, high]
+  source: {type: string}
+  last_reviewed: {type: date}
+  recorded_at: {type: date}
+  owners: {type: array}
+  tags: {type: array}
+  keywords: {type: array}
+  related: {type: array}
+  priority:
+    type: enum
+    values: [low, medium, high, unset]
+  agent_targets: {type: array}
+  scope: {type: string}
+  channel: {type: string}
+  when_to_read: {type: array}
+  objective: {type: boolean}
+
+# 各 type 专有字段（可与 common 并存）
+types:
+  rule:
+    fields:
+      always_apply: {type: boolean}
+      projection: {type: array}
+      projection_mode:
+        type: enum
+        values: [sync, manual]
+      non_goals: {type: string}
+    body: >
+      叙述性规范正文（## 语言标准 / ## Rule 等）。
+      When To Read / Related 进 YAML（when_to_read / related）。
+
+  lesson:
+    fields:
+      applies_to: {type: array}
+      does_not_apply_to: {type: array}
+      promoted_to: {type: string}
+      reason_to_promote: {type: string}
+    body: >
+      ## Observation（或 Correction）与 ## Principle 等叙述；
+      Context / Applicability / Promotion Notes / Related 进 YAML。
+
+  reference:
+    fields:
+      applies_to: {type: array}
+      does_not_apply_to: {type: array}
+      image: {type: string}
+      image_alt: {type: string}
+    body: >
+      客观描述性正文（## 概述 / ## 参数 / ## 对比 / ## 方法 等）。
+      描述“事物是什么/怎样”，无踩坑叙事；适用范围进 YAML（applies_to）。
+      可选 image / image_alt 指向同目录或相对路径配图。
+      可作为 distilled-source 的晋升目标之一（纯事实性提炼 → reference）。
+
+  decision:
+    fields:
+      consequences_positive: {type: array}
+      consequences_negative: {type: array}
+      supersedes: {type: array}
+    body: >
+      ## Context / ## Decision 叙述；Status 用 status 字段；
+      When To Read / Related / Consequences 列表进 YAML。
+
+  template:
+    fields:
+      template_kind: {type: string}
+    body: 模板正文占位说明。
+
+  source:
+    fields:
+      source_url: {type: string}
+      author: {type: string}
+      published_at: {type: string}
+      asset_path: {type: string}
+      raw_html_path: {type: string}
+      image_urls: {type: array}
+    body: >
+      抽取正文（长文）。原始来源元数据进 YAML（source_url/author/…）。
+
+  distilled-source:
+    fields:
+      source_url: {type: string}
+      author: {type: string}
+      inbox_path: {type: string}
+      facts: {type: array}
+      inferences: {type: array}
+      practices: {type: array}
+      risks: {type: array}
+      promote_to: {type: string}
+      promote_rationale: {type: string}
+    body: >
+      可选补充说明；Facts / Inferences / Practices / Risks / 晋升建议进 YAML。
+
+  # --- YggForge 内部插件（plugins/ 下，由 graph_scan 一并索引）---
+  # 设计原则：复用 common 字段（id/title/status/tags/agent_targets/scope/...），
+  # 不引入同义 tag（type 已编码类别）；tag 只承载语义（git/mcp/trigger/...）。
+  # 不追求与各 Agent 原生插件格式一一对应；投影时由 ygg deploy 生成最薄 native 文件。
+
+  skill:
+    fields:
+      description: {type: string}
+      entrypoint: {type: string}
+      inputs: {type: array}
+      outputs: {type: array}
+      depends_on: {type: array}
+      project_to: {type: object}
+    body: >
+      技能正文（## When To Use / ## Steps / ## Inputs / ## Outputs）。
+      可被 ygg associate 按 tag 联想发现；由 ygg deploy 投影到各 Agent 原生
+      skills 目录（Cursor .cursor/skills/、Codex/OpenCode .agents/skills/ 等）。
+
+  mcp-server:
+    fields:
+      transport: {type: string}
+      command: {type: string}
+      args: {type: array}
+      env: {type: object}
+      env_placeholder: {type: string}
+      tools: {type: array}
+      depends_on: {type: array}
+      project_to: {type: object}
+    body: >
+      MCP 服务定义模板（仅占位符；真实密钥不进本仓库，由部署时凭据根注入）。
+      由 ygg deploy 合并到各 Agent 的 mcp 配置（Cursor .cursor/mcp.json、
+      Codex config.toml [mcp_servers]、Claude .mcp.json 等）。
+
+  hook:
+    fields:
+      event: {type: string}
+      command_ref: {type: string}
+      trigger_tags: {type: array}
+      timeout: {type: string}
+      depends_on: {type: array}
+      project_to: {type: object}
+    body: >
+      YggForge 内部钩子定义。根钩子（beforeSubmitPrompt）在安装时一次性部署；
+      其余钩子由 ygg associate 按 trigger_tags 联想触发，不与外部 Agent 自身
+      hooks 体系冲突。

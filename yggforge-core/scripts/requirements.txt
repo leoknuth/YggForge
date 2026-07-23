@@ -1,0 +1,10 @@
+# YggForge 推荐依赖清单
+#
+# 安装：pip install -r requirements.txt
+# 或：ygg doctor --fix-deps（自动检测并安装缺失项，经 behavior 门禁）
+#
+# 无 PyYAML 时回退最小 YAML 解析器，但复杂 tag-graph.yaml（带 weight 的边）
+# 与 behavior.defaults.yaml 可能解析不全（见 docs/guide/install.md）。
+# 其余核心功能仅依赖 Python 3 标准库 + git CLI。
+
+pyyaml>=5.0
