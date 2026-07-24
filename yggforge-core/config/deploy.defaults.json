@@ -182,6 +182,15 @@
           "linux": "<project>/.openclaw/AGENTS.md",
           "darwin": "<project>/.openclaw/AGENTS.md"
         }
+      },
+      {
+        "name": "skills",
+        "source": "profiles/openclaw/skills",
+        "targets": {
+          "windows": "~/.openclaw/workspace/skills",
+          "linux": "~/.openclaw/workspace/skills",
+          "darwin": "~/.openclaw/workspace/skills"
+        }
       }
     ]
   }
