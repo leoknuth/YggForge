@@ -2,7 +2,7 @@
   "format": "tsv-sorted-shards-v1",
   "key_order": "lexicographic",
   "total_records": 33,
-  "total_bytes": 5883,
+  "total_bytes": 5912,
   "shard_max_bytes": 8388608,
   "shard_max_lines": 100000,
   "full_load_max_bytes": 1073741824,
@@ -11,9 +11,9 @@
       "file": "_all.tsv",
       "prefix": "",
       "lines": 33,
-      "bytes": 5883,
+      "bytes": 5912,
       "first_key": "20260701163140-kr$$$$-csb$$$$$-vhsf",
-      "last_key": "ygg-skill-ygg-router"
+      "last_key": "ygg-skill-yggforge"
     }
   ],
   "banner": "# 由 ygg graph build 自动生成，请勿手改。"

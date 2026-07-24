@@ -14,7 +14,7 @@ tags:
   - plugins
   - architecture
 related:
-  - ygg-skill-ygg-router
+  - ygg-skill-yggforge
   - ygg-mcp-gitlab
   - ygg-hook-pre-submit
 ---

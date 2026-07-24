@@ -30,4 +30,4 @@ ygg-hook-pre-submit	plugins/hooks/ygg-pre-submit.md	hook	YggForge 根钩子 befo
 ygg-mcp-gitlab	plugins/mcp-servers/gitlab.md	mcp-server	GitLab MCP 服务定义	git|mcp|ci|review		unset
 ygg-rule-tri-chamber	plugins/rules/tri-chamber-deliberation.md	rule	三庭合议（ICJ）触发与不变量	deliberation|agent|workflow	ygg-skill-tri-chamber	unset
 ygg-skill-tri-chamber	plugins/skills/tri-chamber-deliberation.md	skill	三庭合议（ICJ）编排技能	deliberation|agent|workflow	ygg-rule-tri-chamber	unset
-ygg-skill-ygg-router	plugins/skills/ygg-router.md	skill	YggForge 触发路由技能	ygg|trigger|routing|cursor		unset
+ygg-skill-yggforge	plugins/skills/yggforge.md	skill	YggForge 触发路由技能	ygg|trigger|routing|cursor		unset

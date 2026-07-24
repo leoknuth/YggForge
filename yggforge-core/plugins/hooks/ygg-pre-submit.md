@@ -35,7 +35,7 @@ project_to:
 由 Cursor 自动运行 `scripts/hooks/trigger_detector.py`，把检测结果
 （`should_trigger` + `action`）落盘到 `yggforge-runtime/cache/last_trigger.json`。
 
-agent 回答前必须先 Read 该文件并按 `action` 路由（见 `ygg-router` 技能）。
+agent 回答前必须先 Read 该文件并按 `action` 路由（见 `yggforge` 技能）。
 
 ## 安装
 
@@ -53,6 +53,6 @@ agent 回答前必须先 Read 该文件并按 `action` 路由（见 `ygg-router`
 
 ## 相关
 
-- 技能：`ygg-skill-ygg-router`
+- 技能：`ygg-skill-yggforge`
 - 真源：`knowledge/rules/default-trigger-routing.md`
 - 实现：`profiles/cursor/hooks/ygg_pre_submit.py`、`ygg_session_protocol.py`
