@@ -12,7 +12,9 @@
 - [5. `ygg sync` 与 `ygg push`](#5-ygg-sync-与-ygg-push)
 - [6. 各部署模式下的语义](#6-各部署模式下的语义)
 - [7. Push 风险检查](#7-push-风险检查)
-- [8. 推荐工作流](#8-推荐工作流)
+- [8. Push 前远端对齐](#8-push-前远端对齐)
+- [9. 对齐提示格式](#9-对齐提示格式)
+- [10. 推荐工作流](#10-推荐工作流)
 
 ---
 
@@ -51,10 +53,11 @@
 
 #### 多机协作要点
 
-1. 开工前先 `ygg sync`（`pull --rebase`；dirty 时带 autostash）  
-2. 本地提交整理后再 `ygg push`  
+1. 开工前先 `ygg sync`（先 `fetch`，若远端领先再 `pull --rebase`；dirty 时带 autostash）  
+2. 本地提交整理后再 `ygg push`（同样先对齐，冲突则停手等人）  
 3. 单机不配远程时，把 `git.update` / `git.push` / `deploy.git_sync_after` 设为 `deny`  
-4. 底层脚本一般不必直接调用：`yggforge-core/scripts/git_sync.{ps1,sh}`（根包装）与 `cmds/ops/git_sync.py`（实现）
+4. 底层脚本一般不必直接调用：`yggforge-core/scripts/git_sync.{ps1,sh}`（根包装）与 `cmds/ops/git_sync.py`（实现）  
+5. Agent 纪律真源：`yggforge-core/knowledge/rules/git-workflow.md`
 
 ### Projection Sync
 
@@ -228,10 +231,13 @@ pwsh -File .\ygg.ps1 push cursor
 - 若无法检查权限，则按 `push_safety.on_unable_to_check_permissions` 决定默认动作
 - 若判断为高风险，则按 `push_safety.on_risky_protected_branch` 决定默认动作
 
-默认策略比较保守：
+默认策略（配合「自己提交、自己直推」）：
 
-- 风险不可判定：`ask_user`
-- 风险明确较高：`ask_user`
+- 风险不可判定（未配 GitLab API / token）：`continue`（不拦截直推）
+- 风险明确较高（多人高权限共推保护分支）：`ask_user`
+
+本仓库默认工作流是 **线性历史直推**：`commit` → 必要时空 `pull --rebase` → `push`。  
+不生成合并提交，也不把 push 做成“等人批准 Merge Request”。
 
 若要启用真实的 GitLab 权限检查，建议：
 
@@ -239,9 +245,76 @@ pwsh -File .\ygg.ps1 push cursor
 2. 填入你的 `gitlab.api_url`
 3. 在本机环境变量中设置 `YGG_GITLAB_TOKEN`
 
-因此，多机或多人共享主分支时，默认不会静默直推。
+多人共享主分支且希望更保守时，可在 `sync.local.json` 把 `on_unable_to_check_permissions` 改回 `ask_user`。
 
-## 8. 推荐工作流
+## 8. Push 前远端对齐
+
+`ygg sync` / `ygg push` 在改动本地提交历史或推送前，按下列顺序对齐远端（实现：`cmds/ops/git_sync.py`）：
+
+1. `git fetch <remote>`
+2. 计算 `ahead` / `behind`（相对 `@{u}` 或 `<remote>/<branch>`）
+3. 若 `behind > 0`：打印远端领先提示，再 `git pull --rebase`（dirty 时 `--autostash`）
+4. 若 `behind == 0`：打印已对齐，跳过 pull
+5. 若 rebase 冲突：打印冲突警告并以非零退出，**不**继续 push
+6. `ygg push` 在对齐成功且工作区干净后，再跑 push 风险检查，最后 `git push`
+
+说明：
+
+- 默认策略是 **rebase + 直推**：把本地未推送 commit 接到远端之上，再 push 自己的提交
+- **不生成合并提交**；也不走 MR / 他人 Approve 才能进主线
+- 口语「自己 merge 自己」= rebase 后直推，不是 Merge Request
+- Agent 直接调用 `git push` 时，也应遵守同一语义（见 `git-workflow.md`）
+
+## 9. 对齐提示格式
+
+### 对使用者（对话 / 规则）
+
+标题行保持固定，便于检索与习惯：
+
+```text
+[YggForge git] 远端领先
+- 分支: <branch>（跟踪 <remote>/<branch>）
+- 本地 ahead=<A>，behind=<B>
+- 动作: pull --rebase 后直接 push（不生成合并提交）
+```
+
+```text
+[YggForge git] 已与远端对齐
+- 分支: <branch>
+- 本地 ahead=<A>，behind=0
+- 动作: 直接 push 本地提交（不生成合并提交）
+```
+
+```text
+[YggForge git] rebase 冲突 — 已暂停，请人工决策
+- 分支: <branch>
+- 建议:
+  1. 解决冲突后: git add ... && git rebase --continue
+  2. 放弃本次对齐: git rebase --abort
+- 在你确认前，不会继续 push
+```
+
+```text
+[YggForge git] push 完成
+- 目标: <remote>/<branch>
+- 本地 tip: <short-sha> <subject>
+```
+
+### 脚本机器可读行（stdout）
+
+| 键 | 含义 |
+| --- | --- |
+| `fetch` | `ok -> <remote>` |
+| `align_check` | `ahead=N behind=M upstream=...` |
+| `align_notice` | 远端领先 / 已对齐 / unknown 时的动作说明 |
+| `update` | `ok -> pull --rebase`（或带 `--autostash`） |
+| `push` | `ok -> <remote>/<branch>` |
+| `push_tip` | 推送后 tip 的短 sha + subject |
+| `push_note` | 是否在 push 前做过 rebase |
+
+冲突时完整中文块写到 **stderr**，退出码非零。
+
+## 10. 推荐工作流
 
 推荐按下面的顺序工作：
 
@@ -250,7 +323,7 @@ pwsh -File .\ygg.ps1 push cursor
 3. 若改的是副本：
    - `ygg sync <target>`
    - 或 `ygg push <target>`
-4. 提交并推送仓库
+4. 提交后用 `ygg push`（或等价「先对齐再 push」）推送仓库
 
 如果你的目标工具支持 `link`，优先使用 `link`。
 

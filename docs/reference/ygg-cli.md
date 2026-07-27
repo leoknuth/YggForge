@@ -125,7 +125,9 @@ Linux:
 
 - 入口：`yggforge-core/scripts/cmds/ops/git_risk_check.py`
 - 默认只针对 `main` / `master`
-- 若风险不可判定或判定为多人高权限直推，默认动作是 `ask_user`
+- 工作流是线性直推：`commit` → 必要时空 `pull --rebase` → `push`（不生成合并提交，不走 MR 批准）
+- 风险不可判定（未配 API）：默认 `continue`
+- 判定为多人高权限直推：默认 `ask_user`
 
 `dream` 的当前语义是：
 

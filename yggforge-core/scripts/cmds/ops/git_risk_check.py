@@ -144,7 +144,7 @@ def main() -> int:
         )
         return 0
 
-    unavailable_action = str(push_safety.get("on_unable_to_check_permissions", "ask_user"))
+    unavailable_action = str(push_safety.get("on_unable_to_check_permissions", "continue"))
     risky_action = str(push_safety.get("on_risky_protected_branch", "ask_user"))
     high_access_threshold = int(push_safety.get("high_access_threshold", 40))
     api_url = str(gitlab.get("api_url", "")).strip()

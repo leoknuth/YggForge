@@ -4,6 +4,13 @@
 
 由 ``ygg sync`` / ``ygg push`` 调用。push 前可链式跑 ``git_risk_check.py``。
 本脚本只动仓库 git，不负责 Agent 家目录投影。
+
+对齐语义（与 knowledge/rules/git-workflow.md 一致）：
+1. fetch
+2. 报告 ahead/behind；behind>0 时提示远端领先
+3. pull --rebase（dirty 时 --autostash）
+4. rebase 冲突则结构化警告并停手
+5. update-push 再经风险检查后 push
 """
 
 from pathlib import Path
@@ -18,7 +25,7 @@ SCRIPT_DIR = SCRIPTS_ROOT
 import argparse
 import json
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 class GitSyncError(RuntimeError):
     pass
@@ -68,12 +75,37 @@ def branch_tracking(repo: Path) -> Optional[str]:
         return None
     return result.stdout.strip()
 
-def ahead_behind(repo: Path) -> Optional[str]:
-    tracking = branch_tracking(repo)
-    if not tracking:
+def git_dir(repo: Path) -> Path:
+    raw = run_git(repo, ["rev-parse", "--git-dir"]).stdout.strip()
+    path = Path(raw)
+    return path if path.is_absolute() else (repo / path)
+
+def rebase_in_progress(repo: Path) -> bool:
+    gd = git_dir(repo)
+    return (gd / "rebase-merge").is_dir() or (gd / "rebase-apply").is_dir()
+
+def ahead_behind(repo: Path, upstream: Optional[str] = None) -> Optional[str]:
+    ref = upstream
+    if ref is None:
+        tracking = branch_tracking(repo)
+        if not tracking:
+            return None
+        ref = "@{u}"
+    result = run_git(repo, ["rev-list", "--left-right", "--count", "HEAD...{0}".format(ref)], check=False)
+    if result.returncode != 0:
         return None
-    result = run_git(repo, ["rev-list", "--left-right", "--count", "HEAD...@{u}"])
     return result.stdout.strip()
+
+def parse_ahead_behind(value: Optional[str]) -> Optional[Tuple[int, int]]:
+    if not value:
+        return None
+    parts = value.split()
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
 
 def print_status(repo: Path) -> None:
     branch = current_branch(repo)
@@ -101,6 +133,11 @@ def ensure_tracking_branch(repo: Path) -> str:
         )
     return tracking
 
+def resolve_upstream_ref(repo: Path, remote: str, branch: Optional[str]) -> str:
+    if branch:
+        return "{0}/{1}".format(remote, branch)
+    return ensure_tracking_branch(repo)
+
 def build_pull_rebase_args(repo: Path, remote: str, branch: Optional[str], autostash: bool) -> List[str]:
     args = ["pull", "--rebase"]
     if autostash:
@@ -111,14 +148,82 @@ def build_pull_rebase_args(repo: Path, remote: str, branch: Optional[str], autos
         ensure_tracking_branch(repo)
     return args
 
-def update(repo: Path, remote: str, branch: Optional[str]) -> None:
+def fetch_remote(repo: Path, remote: str) -> None:
+    run_git(repo, ["fetch", remote])
+    print("fetch          : ok -> {0}".format(remote))
+
+def format_conflict_message(repo: Path, branch: str) -> str:
+    return (
+        "[YggForge git] rebase 冲突 — 已暂停，请人工决策\n"
+        "- 分支: {0}\n"
+        "- 仓库: {1}\n"
+        "- 建议:\n"
+        "  1. 解决冲突后: git add ... && git rebase --continue\n"
+        "  2. 放弃本次对齐: git rebase --abort\n"
+        "- 在你确认前，不会继续 push"
+    ).format(branch, repo)
+
+def update(repo: Path, remote: str, branch: Optional[str]) -> Dict[str, Any]:
+    """Fetch + 按需 pull --rebase。返回对齐摘要供调用方/日志使用。"""
+    resolved_branch = branch or current_branch(repo)
     dirty = working_tree_dirty(repo)
+    fetch_remote(repo, remote)
+
+    upstream = resolve_upstream_ref(repo, remote, branch)
+    counts = parse_ahead_behind(ahead_behind(repo, upstream=upstream))
+    if counts is None:
+        ahead, behind = None, None
+        print("align_check    : ahead=<unknown> behind=<unknown> upstream={0}".format(upstream))
+    else:
+        ahead, behind = counts
+        print("align_check    : ahead={0} behind={1} upstream={2}".format(ahead, behind, upstream))
+
+    summary: Dict[str, Any] = {
+        "branch": resolved_branch,
+        "upstream": upstream,
+        "ahead": ahead,
+        "behind": behind,
+        "rebased": False,
+        "skipped_pull": False,
+    }
+
+    if behind == 0:
+        print(
+            "align_notice   : already aligned with remote "
+            "(ahead={0}, behind=0); skip pull --rebase".format(ahead if ahead is not None else "<unknown>")
+        )
+        summary["skipped_pull"] = True
+        return summary
+
+    if behind is not None and behind > 0:
+        print(
+            "align_notice   : remote is ahead by {0} commit(s) "
+            "(local ahead={1}); will pull --rebase before push".format(
+                behind, ahead if ahead is not None else "<unknown>"
+            )
+        )
+    else:
+        print("align_notice   : ahead/behind unknown; will pull --rebase to be safe")
+
     pull_args = build_pull_rebase_args(repo, remote, branch, autostash=dirty)
-    run_git(repo, pull_args)
+    result = run_git(repo, pull_args, check=False)
+    if result.returncode != 0:
+        if rebase_in_progress(repo):
+            raise GitSyncError(format_conflict_message(repo, resolved_branch))
+        raise GitSyncError(
+            "git {0} failed.\nstdout:\n{1}\nstderr:\n{2}".format(
+                " ".join(pull_args),
+                result.stdout.strip(),
+                result.stderr.strip(),
+            )
+        )
+
+    summary["rebased"] = True
     if dirty:
         print("update         : ok -> pull --rebase --autostash")
     else:
         print("update         : ok -> pull --rebase")
+    return summary
 
 def parse_kv_output(text: str) -> Dict[str, Any]:
     parsed: Dict[str, Any] = {}
@@ -151,7 +256,7 @@ def run_push_risk_check(repo: Path, remote: str, branch: str) -> Dict[str, Any]:
             )
         )
     summary = parse_kv_output(result.stdout)
-    summary.setdefault("policy_action", "ask_user")
+    summary.setdefault("policy_action", "continue")
     summary.setdefault("risk_check_available", False)
     summary.setdefault("protected_branch", branch in ("main", "master"))
     return summary
@@ -166,25 +271,40 @@ def print_risk_summary(summary: Dict[str, Any]) -> None:
     print("risk_multi_high: {0}".format(summary.get("risk_multi_high")))
     print("risk_action    : {0}".format(summary.get("policy_action")))
 
+def short_head_subject(repo: Path) -> str:
+    result = run_git(repo, ["log", "-1", "--pretty=format:%h %s"], check=False)
+    if result.returncode != 0:
+        return "<unknown>"
+    return result.stdout.strip() or "<unknown>"
+
 def update_and_push(repo: Path, remote: str, branch: Optional[str]) -> None:
     resolved_branch = branch or current_branch(repo)
-    update(repo, remote, resolved_branch)
+    align = update(repo, remote, resolved_branch)
 
     if working_tree_dirty(repo):
+        if rebase_in_progress(repo):
+            raise GitSyncError(format_conflict_message(repo, resolved_branch))
         raise GitSyncError(
             "Working tree is still dirty after update. Commit or resolve conflicts before pushing."
         )
 
     risk_summary = run_push_risk_check(repo, remote, resolved_branch)
     print_risk_summary(risk_summary)
-    if str(risk_summary.get("policy_action", "ask_user")) != "continue":
+    if str(risk_summary.get("policy_action", "continue")) != "continue":
         raise GitSyncError(
             "Push safety policy requires manual confirmation before pushing this branch. "
-            "Review the risk summary above or override the policy in config/sync.local.json."
+            "Review the risk summary above or override the policy in sync.local.json "
+            "(this is not a Merge Request approval; only a local safety gate)."
         )
 
     run_git(repo, ["push", remote, resolved_branch])
+    tip = short_head_subject(repo)
     print("push           : ok -> {0}/{1}".format(remote, resolved_branch))
+    print("push_tip       : {0}".format(tip))
+    if align.get("rebased"):
+        print("push_note      : rebased onto newer remote before push")
+    elif align.get("skipped_pull"):
+        print("push_note      : already aligned; pushed local commits only")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Cross-platform multi-machine git sync helper for YggForge.")
