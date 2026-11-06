@@ -11,8 +11,8 @@ alwaysApply: true
 
 检测与路由步骤已从「仅建议的软约束」下沉为 **Cursor hooks 硬性执行**，agent 不得凭自身判断跳过检测。
 
-- `beforeSubmitPrompt` 钩子（`.cursor/hooks/ygg_pre_submit.py`）：每条用户消息提交前自动运行 `trigger_detector.py`，把结果（`should_trigger`、`action`、`prompt`）落盘到 `yggforge-runtime/cache/last_trigger.json`，然后放行消息。
-- `sessionStart` 钩子（`.cursor/hooks/ygg_session_protocol.py`）：会话开始时把「完整路由协议」作为 `additional_context` 注入 system context，要求 agent 回答前必读 `last_trigger.json` 并按 `action` 路由。
+- `beforeSubmitPrompt` 钩子（`.cursor/hooks/ygg_pre_submit.py`）：每条用户消息提交前自动运行 `trigger_detector.py`，按会话/消息保存带 ID、原文摘要和 UTC 时间的原子触发结果，然后放行消息。
+- `sessionStart` 钩子（`.cursor/hooks/ygg_session_protocol.py`）：会话开始时把「完整路由协议」作为 `additional_context` 注入 system context，提供本会话 ID，要求 agent 回答前验证本轮触发结果再按 `action` 路由。
 - 钩子注册：`~/.cursor/hooks.json`（**用户级**，随 `ygg deploy link cursor` 一起安装）。
 
 ## 综合回答策略（与 ygg 路由并行，不可跳过）
@@ -21,8 +21,8 @@ alwaysApply: true
 
 ## agent 必须执行的流程
 
-1. 收到用户消息后，**先用 Read 读取** `yggforge-runtime/cache/last_trigger.json`（由钩子刚刷新）。
-2. `should_trigger=false`（含 `skip`）或读不到文件 → **跳过 ygg 检索**（fail open），仍执行综合回答策略：模型推理 + 按需联网搜索 → 综合作答并标注来源/置信度。
+1. 收到用户消息后，按 `sessionStart` 协议与 `plugins/skills/yggforge.md`「触发结果验证」调用核心包内绝对路径的 `ygg_pre_submit.py --read-trigger --conversation-id <本会话ID> --prompt-from-env`；本轮完整原文安全传入 `YGG_TRIGGER_PROMPT`，宿主消息 ID 可得时加 `--message-id`。仅接受 `validation=matched`；不得直接信任 JSON 或旧全局 `last_trigger.json`。
+2. 匹配后的 `should_trigger=false`（含 `skip`） → **跳过 ygg 检索**（fail open），仍执行综合回答策略：模型推理 + 按需联网搜索 → 综合作答并标注来源/置信度。
 3. `should_trigger=true` → 按 `action` 路由到对应 ygg 功能（是否真正执行由 ygg 各命令的 behavior 门禁 ask/allow/deny 决定）：
    - `explicit_ygg` → 按「ygg + 自然语言」解释规则路由（见 `docs/reference/triggers.md` 第 4 节）
    - `remember` → `ygg remember "<内容>" --tags ... --title ...`（记：经验/错题）；若用户表达「以后一直这样 / 写成规则」等站立偏好，加 `--as rule`（或依赖正文自动识别）以自动晋升 rules
@@ -55,7 +55,7 @@ alwaysApply: true
 
 ## fail open
 
-钩子脚本任何异常（检测器崩溃、落盘失败、超时）都不阻断用户消息；`last_trigger.json` 缺失或读不出时 agent 按 skip 处理（跳过 ygg，仍执行三源综合回答）。
+钩子输入最多 4 MiB，超过上限、检测器崩溃、保存失败或超时都不阻断用户消息。验证失败、过期、缺失或宿主无会话 ID 时，只能按本轮用户消息重新检测/内化 AGENTS.md，不沿用旧动作；不要求用户重复授权已经明确要求的操作。
 
 ## 设计边界
 
@@ -63,4 +63,4 @@ alwaysApply: true
 
 ## 迁移说明
 
-旧版本要求 agent「每次收到消息先运行 `python scripts/hooks/trigger_detector.py`（仅建议）」，依赖模型自觉，常被跳过，且只覆盖联想检索。现改为钩子硬性执行检测 + 落盘，并扩展为覆盖 ygg 全部功能路由与三源综合回答策略，agent 只需读取落盘结果并按 `action` 路由。
+旧版本要求 agent「每次收到消息先运行 `python scripts/hooks/trigger_detector.py`（仅建议）」，依赖模型自觉，常被跳过，且只覆盖联想检索。现改为钩子硬性执行检测 + 落盘，并扩展为覆盖 ygg 全部功能路由与三源综合回答策略，agent 校验会话、消息/原文和 5 分钟时效后按 `action` 路由。

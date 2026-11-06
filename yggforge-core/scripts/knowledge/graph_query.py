@@ -5,10 +5,11 @@
 from __future__ import print_function
 
 from pathlib import Path
+import hashlib
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from lib.common import normalize_tag
-from lib.repo_paths import CORE_ROOT, ensure_layout
+from lib.front_matter import as_str_list, parse_front_matter
 
 from knowledge.graph_build import (
     REPO_ROOT,
@@ -16,6 +17,7 @@ from knowledge.graph_build import (
     load_graph_config,
 )
 from knowledge.graph_models import AssociateHit, KnowledgeEntry
+from knowledge.schema import resolve_entry_type
 from knowledge.shard_store import SortedShardStore
 from knowledge.tag_graph import TagExpandInfo, TagGraph
 
@@ -28,34 +30,34 @@ class KnowledgeGraphIndex(object):
         self.config = config or load_graph_config(self.repo_root)
         paths = self.config.get("paths", {})
         storage = self.config.get("storage", {})
-        ensure_layout()
         self.tag_graph = TagGraph.load(
             self.repo_root / str(paths.get("tag_graph", "graph/tag-graph.yaml")),
             self.config,
         )
         self.catalog = SortedShardStore(
-            CORE_ROOT / str(paths.get("catalog_dir", "graph/catalog")),
+            self.repo_root / str(paths.get("catalog_dir", "graph/catalog")),
             shard_max_bytes=int(storage.get("shard_max_bytes", 8 * 1024 * 1024)),
             shard_max_lines=int(storage.get("shard_max_lines", 100000)),
             full_load_max_bytes=int(storage.get("full_load_max_bytes", 1024 * 1024 * 1024)),
             max_prefix_len=int(storage.get("max_prefix_len", 8)),
         )
         self.tag_inverted = SortedShardStore(
-            CORE_ROOT / str(paths.get("tag_inverted_dir", "graph/tag-inverted")),
+            self.repo_root / str(paths.get("tag_inverted_dir", "graph/tag-inverted")),
             shard_max_bytes=int(storage.get("shard_max_bytes", 8 * 1024 * 1024)),
             shard_max_lines=int(storage.get("shard_max_lines", 100000)),
             full_load_max_bytes=int(storage.get("full_load_max_bytes", 1024 * 1024 * 1024)),
             max_prefix_len=int(storage.get("max_prefix_len", 8)),
         )
         self._synonym_map = self._load_synonym_map()
+        self._entry_cache: Dict[str, Optional[KnowledgeEntry]] = {}
+        self._missing_entries: Set[str] = set()
 
     def _load_synonym_map(self) -> Dict[str, str]:
         """加载 tag-synonyms.yaml 的 synonym→canonical 映射（查询侧归并用）。"""
         try:
             from knowledge.synonyms import load_synonym_map
-            from knowledge.tag_yaml import DEFAULT_SYNONYMS_PATH
-
-            return load_synonym_map(DEFAULT_SYNONYMS_PATH)
+            paths = self.config.get("paths", {})
+            return load_synonym_map(self.repo_root / str(paths.get("tag_synonyms", "graph/tag-synonyms.yaml")))
         except Exception:
             return {}
 
@@ -68,10 +70,32 @@ class KnowledgeGraphIndex(object):
 
     def get_entry(self, entry_id: str) -> Optional[KnowledgeEntry]:
         """按 id 取条目。"""
+        if entry_id in self._entry_cache:
+            return self._entry_cache[entry_id]
         payload = self.catalog.get(entry_id)
         if payload is None:
             return None
-        return decode_catalog_payload(entry_id, payload)
+        entry = decode_catalog_payload(entry_id, payload)
+        source = (self.repo_root / entry.path).resolve()
+        try:
+            source.relative_to(self.repo_root.resolve())
+            raw = source.read_bytes()
+        except (ValueError, OSError):
+            self._entry_cache[entry_id] = None
+            self._missing_entries.add(entry_id)
+            return None
+        metadata, _body = parse_front_matter(raw.decode("utf-8-sig"))
+        entry.index_stale = entry.source_fingerprint != hashlib.sha256(raw).hexdigest()
+        entry.kind = resolve_entry_type(metadata, entry.path)
+        entry.title = str(metadata.get("title") or entry.title)
+        entry.priority = str(metadata.get("priority") or "unset").strip().lower()
+        entry.status = str(metadata.get("status", "")).strip().lower()
+        entry.confidence = str(metadata.get("confidence", "")).strip().lower()
+        entry.last_reviewed = str(metadata.get("last_reviewed", "")).strip()
+        entry.tags = [normalize_tag(tag) for tag in as_str_list(metadata.get("tags"))]
+        entry.related = as_str_list(metadata.get("related"))
+        self._entry_cache[entry_id] = entry
+        return entry
 
     def ids_for_tag(self, tag: str) -> List[str]:
         """单个 tag 下的全部条目 id。"""
@@ -95,14 +119,17 @@ class KnowledgeGraphIndex(object):
         hop: Optional[int] = None,
         include_entry_related: bool = True,
         entry_related_hops: Optional[int] = None,
-        limit: Optional[int] = None,
+        limit: Optional[int] = 10,
         types: Optional[Sequence[str]] = None,
+        include_inactive: bool = False,
     ) -> Tuple[List[AssociateHit], Dict[str, Any]]:
         """联想查询主函数。
 
         流程：seed tags → hop 加权扩 tag → tag 反查并集 ids →（可选）条目 related 一跳 → 解析路径。
         ``types`` 非空时，只保留 ``entry.kind`` 命中该集合的条目。
         """
+        self._entry_cache.clear()
+        self._missing_entries.clear()
         unknown_seeds = []
         normalized_seeds = []
         for seed in seed_tags:
@@ -153,7 +180,7 @@ class KnowledgeGraphIndex(object):
                 nxt: Set[str] = set()
                 for entry_id in frontier:
                     entry = self.get_entry(entry_id)
-                    if not entry:
+                    if not entry or (entry.kind == "rule" and entry.status != "active" and not include_inactive):
                         continue
                     for rel_id in entry.related:
                         if rel_id in id_to_min_hop or rel_id in related_extra:
@@ -165,7 +192,9 @@ class KnowledgeGraphIndex(object):
         hits: List[AssociateHit] = []
         for entry_id, via in id_to_via.items():
             entry = self.get_entry(entry_id)
-            if not entry:
+            if not entry or (entry.kind == "rule" and entry.status != "active" and not include_inactive):
+                continue
+            if not (set(entry.tags) & via):
                 continue
             hits.append(
                 AssociateHit(
@@ -180,7 +209,7 @@ class KnowledgeGraphIndex(object):
             )
         for entry_id in related_extra:
             entry = self.get_entry(entry_id)
-            if not entry:
+            if not entry or (entry.kind == "rule" and entry.status != "active" and not include_inactive):
                 continue
             hits.append(
                 AssociateHit(
@@ -220,7 +249,10 @@ class KnowledgeGraphIndex(object):
                 h.entry.id,
             )
         )
+        total_hits = len(hits)
         if limit is not None:
+            if int(limit) < 0:
+                raise ValueError("associate limit 不能为负数")
             hits = hits[: int(limit)]
 
         expanded_payload = {
@@ -231,6 +263,11 @@ class KnowledgeGraphIndex(object):
             "expanded_tags": expanded_payload,
             "unknown_seeds": unknown_seeds,
             "hit_count": len(hits),
+            "total_hit_count": total_hits,
+            "truncated": total_hits > len(hits),
+            "index_stale": any(entry.index_stale for entry in self._entry_cache.values() if entry) or bool(self._missing_entries),
+            "freshness_scope": "queried_entries",
+            "missing_entries": sorted(self._missing_entries),
             "hop": self.tag_graph.default_hop if hop is None else hop,
             "entry_related_hops": rel_hops if include_entry_related else 0,
             "types": sorted(types_set),

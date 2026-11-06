@@ -5,13 +5,12 @@
 会话开始时由 Cursor 调用，尝试把路由协议 + 三源综合回答策略注入
 ``additional_context``。注意：Cursor IDE 存在已知竞态，``sessionStart`` 的
 ``additional_context`` 可能被静默丢弃（社区 Forum #157141 / #158452）。
-因此协议硬路径是：beforeSubmitPrompt 落盘的 last_trigger.json +
+因此协议硬路径是：beforeSubmitPrompt 的会话/消息触发结果验证 +
 AGENTS.md / knowledge 真源 / 核心包内 profiles/cursor/rules/*.mdc（或项目级
 部署投影的 ``<repo>/.cursor/rules/*.mdc``），
 不得只依赖本钩子的 additional_context。
 
-协议要求 agent 在回答每条用户消息前，先 Read last_trigger.json（由
-beforeSubmitPrompt 钩子每条消息自动刷新），按 action 路由到 ygg 记/想/思/运维
+协议要求 agent 在回答每条用户消息前，先验证本会话、本轮原文与时效，再按 action 路由到 ygg 记/想/思/运维
 各类功能；作答时综合模型推理、ygg 检索与联网搜索（见 standing-preference.md）。
 是否真正执行 ygg 命令由 behavior 门禁（ask/allow/deny）决定。
 
@@ -31,6 +30,8 @@ import os
 import sys
 from pathlib import Path
 
+from ygg_pre_submit import _decode_stdin, _event_identity, _read_stdin_bytes, _trigger_path
+
 
 def _stdout_utf8() -> None:
     try:
@@ -46,24 +47,7 @@ def _read_stdin() -> str:
     与 pre_submit 一样避免中文 Windows 文本模式按 GBK 误读
     （Cursor bug：https://forum.cursor.com/t/159259 ）。
     """
-    data = b""
-    try:
-        data = os.read(sys.stdin.fileno(), 1 << 22)
-    except Exception:
-        data = b""
-    if not data:
-        try:
-            data = sys.stdin.buffer.read() or b""
-        except Exception:
-            data = b""
-    if not data:
-        return ""
-    if data.startswith(b"\xef\xbb\xbf"):
-        data = data[3:]
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        return data.decode("utf-8", errors="replace")
+    return _decode_stdin(_read_stdin_bytes())
 
 
 def _bootstrap_core() -> Path:
@@ -95,20 +79,42 @@ def main() -> int:
     _stdout_utf8()
 
     core_root = _bootstrap_core()
-    cache_file = None
+    try:
+        event = json.loads(_read_stdin())
+        if not isinstance(event, dict):
+            event = {}
+    except Exception:
+        event = {}
+    conversation_id = _event_identity(event, "conversation")
     ygg_cli = None
     try:
-        from lib.repo_paths import RUNTIME_ROOT, REPO_ROOT
-        cache_file = RUNTIME_ROOT / "cache" / "last_trigger.json"
-        ygg_cli = REPO_ROOT / "ygg.ps1"
+        from lib.repo_paths import RUNTIME_ROOT
+        runtime_root = RUNTIME_ROOT
     except Exception:
-        cache_file = core_root / "yggforge-runtime" / "cache" / "last_trigger.json"
-        ygg_cli = core_root.parent / "ygg.ps1"
+        runtime_root = core_root.parent / "yggforge-runtime"
+    ygg_cli = core_root / "scripts" / ("ygg.ps1" if sys.platform.startswith("win") else "ygg.sh")
+
+    validator = core_root / "profiles" / "cursor" / "hooks" / "ygg_pre_submit.py"
+    if conversation_id:
+        cache_file = _trigger_path(runtime_root, conversation_id)
+        read_instruction = (
+            "本会话 ID 为 {id}。本会话候选缓存为 {cache}。\n"
+            "   用当前平台 Python 执行 {validator} --read-trigger --conversation-id <本会话ID> "
+            "--prompt-from-env；将本轮完整用户原文安全传入 YGG_TRIGGER_PROMPT，宿主消息 ID 可得时再加 --message-id。\n"
+            "   必须由验证入口返回 validation=matched 才可按 action 路由；它核对会话、消息/原文及 5 分钟时效。"
+            "不得直接信任 JSON 文件或旧的 cache/last_trigger.json。\n"
+        ).format(id=json.dumps(conversation_id, ensure_ascii=False), cache=cache_file, validator=validator)
+    else:
+        read_instruction = (
+            "宿主未提供会话 ID，不消费任何持久触发缓存（尤其是旧 last_trigger.json）。"
+            "请按本轮用户消息内化 AGENTS.md 触发规则或重新运行 trigger_detector.py；"
+            "身份缺失不要求用户重复授权已经明确要求的操作。\n"
+        )
 
     protocol = (
         "[YggForge 强制钩子已启用——完整覆盖 记/想/思/运维]\n\n"
         "本会话启用了 ygg 强制钩子。在你回答任何用户消息之前，必须执行以下流程，不得跳过：\n\n"
-        "1. 用 Read 工具读取：{cache}\n"
+        "1. {read_instruction}\n"
         "2. 按 action 路由到对应 ygg 功能（是否真正执行由 ygg 各命令的 behavior 门禁 ask/allow/deny 决定）：\n"
         "   - skip / 读不到文件 → 跳过 ygg 检索（fail open），仍执行综合回答策略："
         "模型推理 + 按需联网 → 综合作答并标注来源/置信度\n"
@@ -133,16 +139,11 @@ def main() -> int:
         "   综合三源——ygg 检索（按 action；skip 可跳过）、模型自身推理、联网搜索（WebSearch/WebFetch）；"
         "不得仅凭 ygg 命中作答。权重：时效/事实→联网↑；仓库规范/记忆→ygg↑；推理/方案→模型↑。"
         "真源：knowledge/rules/standing-preference.md；薄规则：profiles/cursor/rules/ygg-answer-synthesis.mdc。\n"
-        "4. last_trigger.json 由 beforeSubmitPrompt 钩子在每条用户消息提交前自动刷新，你读到的是最新检测结果。\n"
+        "4. beforeSubmitPrompt 按会话与消息保存带 ID 和 UTC 时间的原子结果；未匹配、过期、缺失或保存失败时按本轮原文重新检测，不能沿用上一条动作。\n"
         "5. 检测步骤已硬性下沉到钩子，你不得凭模型自身判断跳过检测。是否触发、触发哪个功能，"
         "由 ygg 内部参数（features.default_trigger_on_chat 与 trigger_detector 模式匹配）"
         "和各命令 behavior 门禁决定，钩子只负责强制过检 + 路由建议。"
-    ).format(cache=cache_file, ygg=ygg_cli)
-
-    try:
-        _read_stdin()  # drain stdin，避免管道阻塞
-    except Exception:
-        pass
+    ).format(read_instruction=read_instruction, ygg=ygg_cli)
 
     print(json.dumps({"additional_context": protocol}, ensure_ascii=False))
     return 0

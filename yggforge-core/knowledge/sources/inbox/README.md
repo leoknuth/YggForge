@@ -24,3 +24,7 @@
 - `ygg ingest`（实现：`scripts/cmds/pipeline/ingest.py`）
 
 生成条目应带 `type: source`；来源元数据写在 YAML，正文为 `## 抽取正文`。再经 `ygg distill` 得到 `type: distilled-source` 草稿。
+
+## 已确认的公开来源
+
+- [狞猫事实核查引用](20261106-caracal-fact-check.sources.md)。

@@ -104,8 +104,8 @@ def parse_id(entry_id: str) -> Optional[Tuple[str, str, str, str]]:
 
 def created_datetime_for_file(path: Path, git_root: Path = REPO_ROOT) -> datetime:
     """优先用 git 首次加入时间，否则用文件 mtime。"""
-    rel = path.resolve().relative_to(git_root.resolve()).as_posix()
     try:
+        rel = path.resolve().relative_to(git_root.resolve()).as_posix()
         proc = subprocess.run(
             ["git", "log", "--diff-filter=A", "--follow", "--format=%ct", "-1", "--", rel],
             cwd=str(git_root),

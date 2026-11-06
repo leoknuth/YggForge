@@ -280,19 +280,19 @@ features:
 
 检测步骤已从「仅建议的软约束」下沉为 Cursor hooks 硬性执行，agent 无法跳过：
 
-- `beforeSubmitPrompt` 钩子（`.cursor/hooks/ygg_pre_submit.py`）：每条用户消息提交前自动跑 `trigger_detector.py`，结果落盘到 `yggforge-runtime/cache/last_trigger.json`，放行消息。
-- `sessionStart` 钩子（`~/.cursor/hooks/ygg_session_protocol.py`）：会话开始尝试把「路由协议 + 综合回答策略」作为 `additional_context` 注入。**注意**：Cursor IDE 存在已知竞态，`sessionStart` 的 `additional_context` 可能被静默丢弃；协议以 alwaysApply / 引导加载的 `.mdc` 与 hooks 落盘的 `last_trigger.json` 为准，不得只依赖 `additional_context`。
+- `beforeSubmitPrompt` 钩子（`.cursor/hooks/ygg_pre_submit.py`）：每条用户消息提交前自动跑 `trigger_detector.py`，结果按会话与消息写入 `yggforge-runtime/cache/triggers/`，放行消息。
+- `sessionStart` 钩子（`~/.cursor/hooks/ygg_session_protocol.py`）：会话开始尝试把「路由协议 + 综合回答策略」作为 `additional_context` 注入。**注意**：Cursor IDE 存在已知竞态，`sessionStart` 的 `additional_context` 可能被静默丢弃；协议以 alwaysApply / 引导加载的 `.mdc` 与 经过身份、原文摘要与时效验证的检测结果为准，不得只依赖 `additional_context`。
 - 注册：部署到**用户级** `~/.cursor/hooks.json`（官方支持的 User Hooks）。profile 真源在仓库 `profiles/cursor/hooks*.json`，可入库；不是项目根 `.cursor/hooks.json`。
-- **云端 Agent**：通常不读用户级 `~/.cursor/hooks.json`；CLI 对 `beforeSubmitPrompt` 支持也可能不全。**无 hook 环境的接入方案见 `AGENTS.md`「KimiClaw/OpenClaw 集成 (无 IDE Hooks 环境)」**——由 Agent 内化触发规则静默判断每条消息，等价替代钩子落盘 `last_trigger.json`。跨环境请以仓库内协议文档 + 本机 IDE hooks 为准。
-- stdin / 中文：Cursor 在非 UTF-8 Windows（如 GBK 936）上会污染 hook stdin 的非 ASCII 字段。相关帖：[双重编码 #159259](https://forum.cursor.com/t/hook-stdin-pipe-double-encodes-non-ascii-on-non-utf-8-windows/159259)、[transcript 绕过 #162295](https://forum.cursor.com/t/windows-cursor-hooks-stdin-corrupts-utf-8-text-before-hook-script-receives-it/162295)、[`?` 替换 #142878](https://forum.cursor.com/t/windows-cursor-hooks-corrupt-chinese-utf-8-characters-in-stdin-replaced-with-question-marks/142878)、[log 正确 stdin 已坏 #146604](https://forum.cursor.com/t/on-windows-chinese-prompt-in-hooks-stdin-becomes-while-execution-log-shows-correct-text/146604)。本钩子在 Windows 上优先读 `transcript_path` JSONL 的 `<user_query>`（UTF-8 真源），并保留 mbcs 乱码回环兜底。系统侧也可开「Beta UTF-8」或安装 `pwsh`（见 `docs/guide/install.md`）。实现注释见 `profiles/cursor/hooks/ygg_pre_submit.py`。
+- **云端 Agent**：通常不读用户级 `~/.cursor/hooks.json`；CLI 对 `beforeSubmitPrompt` 支持也可能不全。**无 hook 环境的接入方案见 `AGENTS.md`「KimiClaw/OpenClaw 集成 (无 IDE Hooks 环境)」**——由 Agent 内化触发规则静默判断每条消息，依据本轮消息进行检测，不复用全局旧缓存。跨环境请以仓库内协议文档 + 本机 IDE hooks 为准。
+- stdin / 中文：Cursor 在非 UTF-8 Windows（如 GBK 936）上会污染 hook stdin 的非 ASCII 字段。相关帖：[双重编码 #159259](https://forum.cursor.com/t/hook-stdin-pipe-double-encodes-non-ascii-on-non-utf-8-windows/159259)、[transcript 绕过 #162295](https://forum.cursor.com/t/windows-cursor-hooks-stdin-corrupts-utf-8-text-before-hook-script-receives-it/162295)、[`?` 替换 #142878](https://forum.cursor.com/t/windows-cursor-hooks-corrupt-chinese-utf-8-characters-in-stdin-replaced-with-question-marks/142878)、[log 正确 stdin 已坏 #146604](https://forum.cursor.com/t/on-windows-chinese-prompt-in-hooks-stdin-becomes-while-execution-log-shows-correct-text/146604)。本钩子优先采用可读的当前 prompt；只有文本缺失或损坏且消息身份匹配时，才使用 transcript 恢复。编码候选按平台处理，不要求 Linux 存在 mbcs。系统侧也可开「Beta UTF-8」或安装 `pwsh`（见 `docs/guide/install.md`）。实现注释见 `profiles/cursor/hooks/ygg_pre_submit.py`。
 - 平台特定命令：Windows 用 `py -X utf8 hooks/...`（`profiles/cursor/hooks.windows.json`），Linux 用 `python3 hooks/...`。`hooks_config` 用 `sources` 按平台选真源。
 - 部署后重启 Cursor + heartbeat 诊断：改 `hooks.json` 后必须重启。看 `~/.cursor/ygg_hook_heartbeat.txt` 的 `prompt_ok`/`keys`。完整排查见 `docs/guide/install.md` 第 9 节。
 
-### agent 工作流（读落盘结果，不再自己跑检测器）
+### agent 工作流（验证本轮检测结果）
 
 ```mermaid
 flowchart TB
-  msg[用户消息] --> read[Read last_trigger.json]
+  msg[用户消息] --> read[核对会话 消息 原文与时效]
   read --> model[模型形成初步判断]
   model --> gate{should_trigger?}
   gate -->|false / skip| web1[按需联网搜索]
@@ -305,7 +305,7 @@ flowchart TB
   model --> web2
 ```
 
-1. 收到用户消息后，**先 Read** `yggforge-runtime/cache/last_trigger.json`（钩子刚刷新）。
+1. 收到消息后，调用 `ygg_pre_submit.py --read-trigger`，传入当前会话与消息身份（或当前 prompt）；验证成功后才按结果路由。结果位于 `cache/triggers/<会话摘要>/<消息摘要>.json`，默认有效期 5 分钟。仅直接读取文件不算完成验证。
 2. `should_trigger=false`（含 `skip`）或读不到文件 → **跳过 ygg 检索**（fail open），仍执行[综合回答策略](#综合回答策略三源综合)：模型推理 + 按需联网 → 综合作答并标注来源/置信度。
 3. `should_trigger=true` → 按 `action` 路由到对应 ygg 功能（是否真正执行由各命令 behavior 门禁 ask/allow/deny 决定）：
    - `explicit_ygg` → 按「ygg + 自然语言」解释规则路由（见第 4 节）
@@ -317,12 +317,12 @@ flowchart TB
    - `tag` → `ygg tag --list / --add / --relate ...`（想：标签管理）
    - `graph` → `ygg graph build`（想：重建图索引）
    - `dream` → `ygg dream --scan`（思：扫描候选）
-   - `promote` → `ygg promote --to lesson|reference|rule|template|decision --entry <entry> ...`（思：晋升门禁）
+   - `promote` → `ygg promote lesson|reference|rule|template|decision --entry <entry> ...`（思：晋升门禁）
    - `status` → `ygg status`；`deploy` → `ygg deploy link <target>`；`sync` → `ygg sync` / `ygg push`；`behavior` → `ygg behavior`（运维）
    - `default_on` → 模型先形成初步判断 → 提炼 seed tags → `ygg associate --tag ... --json` → Read 命中真源 → 必要时 `ygg recall` → **联网搜索**（事实/时效类必搜）→ 综合三源作答并标注来源/置信度
    - `associate_suggested` → 建议先 `ygg associate`，必要时 `ygg recall` → 综合三源作答
 4. 无论 `action` 为何，回答前须满足综合回答策略（纯运维指令、纯问候与用户声明禁网/静默除外）。
-5. 读不到 `last_trigger.json` → 同 `skip`（fail open），仍执行综合回答策略（步骤 2 已述，此处不重复展开）。
+5. 找不到匹配结果、身份缺失、已过期或原文不一致时，检测结果返回 skip；无 hook 环境仍可按本轮 AGENTS 约定自行判断或重新检测，不能借用其他消息缓存。
 
 ### 综合回答策略（三源综合）
 

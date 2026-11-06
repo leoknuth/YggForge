@@ -4,8 +4,8 @@ title: 我将 Linux 页大小从 4KB 改为 2MB，结果性能彻底翻车了！
 type: distilled-source
 status: draft
 confidence: medium
-source: "https://mp.weixin.qq.com/s/hY5upuLC2rpPYQw09AeTvA?mpshare=1&scene=1&srcid=07018Mj49Yci3XhjB2nEDRFt&sharer_shareinfo=41e30680e43820a2ea228013684f796e&sharer_shareinfo_first=41e30680e43820a2ea228013684f796e#rd"
-source_url: "https://mp.weixin.qq.com/s/hY5upuLC2rpPYQw09AeTvA?mpshare=1&scene=1&srcid=07018Mj49Yci3XhjB2nEDRFt&sharer_shareinfo=41e30680e43820a2ea228013684f796e&sharer_shareinfo_first=41e30680e43820a2ea228013684f796e#rd"
+source: "https://mp.weixin.qq.com/s/hY5upuLC2rpPYQw09AeTvA?mpshare=1&scene=1#rd"
+source_url: "https://mp.weixin.qq.com/s/hY5upuLC2rpPYQw09AeTvA?mpshare=1&scene=1#rd"
 author: 深度Linux
 inbox_path: knowledge/sources/inbox/2026-07-01-linux-page-size-4kb-vs-2mb.md
 scope: Distilled from inbox source

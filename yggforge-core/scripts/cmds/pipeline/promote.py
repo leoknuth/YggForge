@@ -6,7 +6,7 @@
 写操作受 behavior / core_write 门禁约束。
 """
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
 
 # cmds/<domain>/<script>.py → scripts/
@@ -87,7 +87,7 @@ def assign_knowledge_id(lines: List[str], destination: Path) -> None:
     from knowledge.knowledge_id import generate_knowledge_id
 
     title = extract_scalar(lines, "title") or destination.stem
-    entry_id = generate_knowledge_id(destination, title, created=datetime.now())
+    entry_id = generate_knowledge_id(destination, title, repo_root=CONTENT_ROOT, created=datetime.now())
     update_or_append_scalar(lines, "id", entry_id)
 
 def update_rule_front_matter(lines: List[str], destination: Path) -> None:
@@ -171,25 +171,31 @@ def find_duplicate_destination(destination_root: Path, destination_name: str, ti
     return None
 
 def extract_tags(front_lines: List[str]) -> List[str]:
-    """从 front matter 解析 tags（YAML 列表或内联数组）。"""
-    tags: List[str] = []
-    in_tags = False
-    for line in front_lines:
-        stripped = line.strip()
-        if stripped.startswith("tags:"):
-            rest = stripped[5:].strip()
-            if rest.startswith("[") and rest.endswith("]"):
-                inner = rest[1:-1]
-                tags = [t.strip().strip('"').strip("'") for t in inner.split(",") if t.strip()]
-                return tags
-            in_tags = True
-            continue
-        if in_tags:
-            if stripped.startswith("- "):
-                tags.append(stripped[2:].strip().strip('"').strip("'"))
-            elif stripped and not stripped.startswith("#"):
-                in_tags = False
-    return tags
+    """所有模块使用相同的 YAML 列表解析逻辑。"""
+    from lib.front_matter import as_str_list, parse_front_matter
+
+    metadata, _body = parse_front_matter("---\n{0}\n---\n".format("\n".join(front_lines)))
+    return as_str_list(metadata.get("tags"))
+
+
+def resolve_destination(destination_root: Path, name: str) -> Path:
+    """拒绝绝对路径、父目录跳转和符号链接导致的晋升目录逃逸。"""
+    normalized = name.replace("\\", "/")
+    relative = Path(normalized)
+    if not normalized or relative.is_absolute() or PureWindowsPath(name).is_absolute() or PureWindowsPath(name).drive or ".." in relative.parts:
+        raise PromoteError("晋升名称必须是目标目录内的相对路径: {0}".format(name))
+    if normalized in (".", "./"):
+        raise PromoteError("晋升名称必须指向 Markdown 文件")
+    if not normalized.endswith(".md"):
+        relative = Path(normalized + ".md")
+    root = destination_root.resolve()
+    destination = (root / relative).resolve()
+    try:
+        root.relative_to(CONTENT_ROOT.resolve())
+        destination.relative_to(root)
+    except ValueError as exc:
+        raise PromoteError("晋升目标超出所选类型目录: {0}".format(name)) from exc
+    return destination
 
 def find_associate_duplicate(
     draft_tags: List[str],
@@ -212,6 +218,7 @@ def find_associate_duplicate(
             seed_tags=draft_tags,
             hop=0,
             include_entry_related=False,
+            limit=None,
         )
     except Exception:
         # 图未构建或依赖缺失时跳过查重（不阻断晋升）
@@ -327,6 +334,8 @@ def main() -> int:
         raise PromoteError("--objective 仅在 --auto --to reference 时有意义。")
     if args.standing and not (args.auto and args.to == "rule"):
         raise PromoteError("--standing 仅在 --auto --to rule 时有意义。")
+    if args.auto and args.to == "reference" and not args.objective:
+        raise PromoteError("自动晋升 reference 必须显式提供 --objective。")
 
     force = None
     if args.yes:
@@ -381,9 +390,8 @@ def main() -> int:
 
         destination_root = DESTINATION_ROOTS[args.to]
         destination_name = args.name or source.name
-        if not destination_name.endswith(".md"):
-            destination_name = "{0}.md".format(destination_name)
-        destination = destination_root / destination_name
+        destination = resolve_destination(destination_root, destination_name)
+        destination_name = destination.relative_to(destination_root.resolve()).as_posix()
 
         if source.resolve() == destination.resolve():
             raise PromoteError("Source and destination are identical: {0}".format(source))
@@ -458,7 +466,7 @@ def main() -> int:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(rendered, encoding="utf-8-sig")
             source.unlink()
-            update_readme_index(args.to, destination.name)
+            update_readme_index(args.to, destination_name)
 
         item = {
             "source": str(source),

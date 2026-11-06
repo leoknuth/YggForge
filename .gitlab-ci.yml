@@ -1,39 +1,24 @@
-# YggForge 最小健康检查（GitLab CI）
-# 不依赖 PyYAML / 外部服务；失败即阻断合并。
-
+# 标准库回归与只读检查；索引构建只发生在临时副本。
 stages:
-  - lint
+  - test
 
 variables:
   PYTHONUTF8: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
 
 .ygg_base:
   image: python:3.12-alpine
   before_script:
-    - python -V
     - apk add --no-cache git >/dev/null
 
-compileall:
+regression:
   extends: .ygg_base
-  stage: lint
+  stage: test
   script:
-    - python -m compileall -q yggforge-core/scripts
+    - python -S tests/run_tests.py
 
-graph_check:
+repository_check:
   extends: .ygg_base
-  stage: lint
+  stage: test
   script:
-    - python yggforge-core/scripts/ygg.py graph check
-
-graph_freshness:
-  extends: .ygg_base
-  stage: lint
-  script:
-    - python yggforge-core/scripts/ygg.py graph build
-    - git diff --exit-code yggforge-core/graph/catalog/ yggforge-core/graph/tag-inverted/
-
-mdc_check:
-  extends: .ygg_base
-  stage: lint
-  script:
-    - python yggforge-core/scripts/ygg.py project mdc --check
+    - python -S tests/check_repository.py

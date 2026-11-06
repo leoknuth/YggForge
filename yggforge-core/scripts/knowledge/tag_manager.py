@@ -9,6 +9,8 @@ tag-graph.yaml 使用仓库既有格式：related: [ { tag: x, weight: 1.0 }, ..
 from __future__ import print_function
 
 from pathlib import Path
+import os
+import tempfile
 from typing import Any, Dict, List, Optional, Set
 
 from lib.common import normalize_tag
@@ -50,13 +52,13 @@ class TagManager(object):
         self._load()
 
     def _load(self) -> None:
+        self._source_bytes = self.tag_graph_path.read_bytes() if self.tag_graph_path.exists() else None
         if not self.tag_graph_path.exists():
             self._data = {
                 "version": 1,
                 "defaults": {"hop": 2, "max_nodes": 64},
                 "tags": {},
             }
-            dump_yaml(self.tag_graph_path, self._data)
         else:
             self._data = load_yaml(self.tag_graph_path)
             if "tags" not in self._data:
@@ -65,7 +67,54 @@ class TagManager(object):
                 self._data["defaults"] = {"hop": 2, "max_nodes": 64}
 
     def _save(self) -> None:
-        dump_yaml(self.tag_graph_path, self._data)
+        current = self.tag_graph_path.read_bytes() if self.tag_graph_path.exists() else None
+        if current != self._source_bytes:
+            raise RuntimeError("标签图已被其他操作修改，请重新加载后再写入。")
+        previous = load_yaml(self.tag_graph_path) if current is not None else {}
+        old_tags = previous.get("tags") or {}
+        new_tags = self._data.get("tags") or {}
+        added = {key: value for key, value in new_tags.items() if key not in old_tags}
+        only_added = (
+            bool(added)
+            and all(new_tags.get(key) == value for key, value in old_tags.items())
+            and {key: value for key, value in previous.items() if key != "tags"}
+            == {key: value for key, value in self._data.items() if key != "tags"}
+        )
+        # 新增标签先尝试追加，原有注释、缩进、换行和节点保持原字节。
+        with tempfile.TemporaryDirectory(prefix="ygg-tag-stage-") as temporary:
+            stage = Path(temporary) / "tag-graph.yaml"
+            payload = None
+            if current is not None and only_added:
+                dump_yaml(stage, {"tags": added})
+                rendered = stage.read_text(encoding="utf-8-sig")
+                if "tags:\n" in rendered:
+                    suffix = rendered.split("tags:\n", 1)[1]
+                    newline = b"\r\n" if b"\r\n" in current else b"\n"
+                    suffix_bytes = suffix.replace("\r\n", "\n").encode("utf-8").replace(b"\n", newline)
+                    candidate = current + (b"" if current.endswith(b"\n") else newline) + suffix_bytes
+                    stage.write_bytes(candidate)
+                    if load_yaml(stage) == self._data:
+                        payload = candidate
+            if payload is None:
+                dump_yaml(stage, self._data)
+                if load_yaml(stage) != self._data:
+                    raise RuntimeError("标签图序列化未保留完整数据，已拒绝写入。")
+                payload = stage.read_bytes()
+            self.tag_graph_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, staged = tempfile.mkstemp(prefix=".tag-graph-", dir=str(self.tag_graph_path.parent))
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                if self.tag_graph_path.exists():
+                    os.chmod(staged, self.tag_graph_path.stat().st_mode & 0o777)
+                if (self.tag_graph_path.read_bytes() if self.tag_graph_path.exists() else None) != current:
+                    raise RuntimeError("标签图在写入前发生变更，已拒绝覆盖。")
+                os.replace(staged, self.tag_graph_path)
+            finally:
+                if os.path.exists(staged):
+                    os.unlink(staged)
         self._load()
 
     def _authorize(self, operation: str, summary: str, force: Optional[str] = None) -> Dict[str, Any]:

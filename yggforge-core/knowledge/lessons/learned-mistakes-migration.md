@@ -42,7 +42,6 @@ does_not_apply_to:
 | C++ 指针引用 / pragma once / 注释模板 / 禁用 doxygen 尾随 | `cpp-style.md` |
 | Git 依赖步骤禁止并行 / 回报以 show --stat 等 | `git-workflow.md` |
 | 任意框架未明说则不设置 | — |
-| BarrOpt/libbarraopt 缺失为误报 | — |
 | 「永远记住」须触发错题本流程 | `memory-promotion.md` + `ygg remember` |
 
 ## 明确不再沿用（绑定旧 Cursor 回收闭环）

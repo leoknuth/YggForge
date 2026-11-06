@@ -19,6 +19,11 @@ class KnowledgeEntry:
     tags: List[str] = field(default_factory=list)
     related: List[str] = field(default_factory=list)
     priority: str = "unset"
+    status: str = ""
+    confidence: str = ""
+    last_reviewed: str = ""
+    source_fingerprint: str = ""
+    index_stale: bool = False
 
 
 @dataclass

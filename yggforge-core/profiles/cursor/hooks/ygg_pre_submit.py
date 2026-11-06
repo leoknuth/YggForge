@@ -5,7 +5,7 @@
 每条用户消息提交前由 Cursor 调用。流程：
 1. 从 stdin 读取 JSON，取用户 prompt 文本；
 2. 运行 trigger_detector.py 判断 should_trigger；
-3. 把检测结果落盘到 yggforge-runtime/cache/last_trigger.json，供 agent 读取；
+3. 按会话与消息原子保存带身份和 UTC 时间的结果，供验证入口读取；
 4. 返回 {"continue": true, "user_message": "..."} 放行消息，触发时提示用户。
 
 设计原则：fail open。检测器/落盘任何异常都不阻断用户消息；
@@ -36,25 +36,31 @@ Cursor Windows stdin 编码 bug（本文件大量逻辑都在绕过它）
     https://forum.cursor.com/t/on-windows-chinese-prompt-in-hooks-stdin-becomes-while-execution-log-shows-correct-text/146604
 
 本仓库绕过（按优先级）：
-  1. Windows 上优先用 stdin 里的 ``transcript_path``（ASCII 路径）打开 JSONL，
-     取最近 ``<user_query>``——文件本身是合法 UTF-8（见 #162295）。
+  1. 优先保留本轮 stdin 文本；缺失/明确损坏时仅在消息 ID 匹配后
+     从 ``transcript_path`` 的 UTF-8 JSONL 恢复 ``<user_query>``——文件本身是合法 UTF-8（见 #162295）。
   2. 若只能用 stdin ``prompt``：二进制读 + 多编码试探 + mbcs/surrogateescape
      回环修复（见 ``_fix_windows_mojibake``）。
   3. 系统侧：Beta UTF-8 或 ``pwsh``（见 docs/guide/install.md）。
   4. Windows hooks 用 ``py -X utf8``（hooks.windows.json），避免 Python 按
      系统代码页把已污染的 stdin 再错解一层。
 
-Cursor 修好 stdin 管道后，transcript 优先路径仍安全（多一次文件读）；
-届时可考虑收紧为「仅 ``_looks_garbled`` 时才读 transcript」。
+transcript 身份无法核对时保守跳过恢复，不能把上一轮用户消息当成本轮命令。
 """
 
 from __future__ import print_function
 
+import argparse
+import hashlib
 import json
+import math
 import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -66,22 +72,38 @@ def _stdout_utf8() -> None:
         pass
 
 
-def _read_stdin_bytes() -> bytes:
-    """从 stdin 读取原始字节（不解码）。
+MAX_STDIN_BYTES = 4 * 1024 * 1024
+TRIGGER_MAX_AGE_SECONDS = 300
 
-    必须走二进制：中文 Windows 文本模式会按 GBK 解码 Cursor 喂入的 UTF-8，
-    造成二次损坏。相关 Cursor bug 见模块 docstring 链接（#159259 等）。
-    """
-    data = b""
+
+class InputLimitError(ValueError):
+    """输入超过明确上限；不能把截断的 JSON 当作本次用户消息。"""
+
+
+def _read_stdin_bytes() -> bytes:
+    """循环二进制读取到 EOF，最多 4 MiB；超限明确失败并由 hook 放行。"""
+    chunks = []
+    size = 0
     try:
-        data = os.read(sys.stdin.fileno(), 1 << 22)
-    except Exception:
-        data = b""
-    if not data:
-        try:
-            data = sys.stdin.buffer.read() or b""
-        except Exception:
-            data = b""
+        fd = sys.stdin.fileno()
+    except (AttributeError, OSError, ValueError):
+        fd = None
+    stream = getattr(sys.stdin, "buffer", None)
+    while True:
+        count = min(65536, MAX_STDIN_BYTES - size + 1)
+        if fd is not None:
+            block = os.read(fd, count)
+        elif stream is not None:
+            block = stream.read(count)
+        else:
+            return b""
+        if not block:
+            break
+        chunks.append(block)
+        size += len(block)
+        if size > MAX_STDIN_BYTES:
+            raise InputLimitError("hook stdin 超过 4 MiB 上限")
+    data = b"".join(chunks)
     if data.startswith(b"\xef\xbb\xbf"):
         data = data[3:]
     return data
@@ -96,11 +118,19 @@ def _decode_stdin(data: bytes) -> str:
       - 无法表示字符已被换成 ``?`` 的残缺串（#142878 / #146604）。
 
     对每种候选解码：要求能 ``json.loads``；再对 prompt 做 mojibake 修复并打分，
-    选 PUA/替换符最少、CJK 更合理的那个。最终 prompt 仍优先走 transcript（见
+    选 PUA/替换符最少、CJK 更合理的那个。最终 prompt 仅在身份匹配时由 transcript 恢复（见
     ``_extract_prompt``），此处只尽量保住 JSON 外壳可解析。
     """
     if not data:
         return ""
+
+    # 合法 UTF-8 JSON 不参与其它编码的启发式竞争，避免损坏正确的本轮文本。
+    try:
+        text = data.decode("utf-8-sig")
+        if isinstance(json.loads(text), dict):
+            return text
+    except (UnicodeDecodeError, ValueError):
+        pass
 
     def score_text(text: str) -> tuple:
         try:
@@ -120,7 +150,7 @@ def _decode_stdin(data: bytes) -> str:
     for enc in ("utf-8", "utf-8-sig", "gb18030", "gbk", "mbcs"):
         try:
             text = data.decode(enc)
-        except UnicodeDecodeError:
+        except (UnicodeDecodeError, LookupError):
             continue
         sc = score_text(text)
         if sc is None:
@@ -340,17 +370,31 @@ def _looks_garbled(text: str) -> bool:
     """
     if not text:
         return True
-    if "?" in text or "\ufffd" in text:
+    if "\ufffd" in text:
         return True
     # 私有使用区字符常见于 mbcs 误读（#159259 类双重编码）
-    if any("\ue000" <= c <= "\uf8ff" for c in text):
+    if any("\ue000" <= c <= "\uf8ff" or "\ud800" <= c <= "\udfff" for c in text):
         return True
     # 含 CJK 但「再污染」能还原成别的串 → 多半是乱码（已在 fix 里处理）；
     # 这里额外：CJK 很少却有很多非常见汉字时可疑——略过，交给 transcript。
     return False
 
 
-def _prompt_from_transcript(transcript_path: str) -> str:
+def _event_identity(data: Dict[str, Any], kind: str) -> str:
+    """读取宿主提供的消息身份；不把用户 prompt 内容当作会话身份。"""
+    keys = ("conversation_id", "session_id", "chat_id") if kind == "conversation" else (
+        "message_id", "generation_id", "request_id", "id", "uuid"
+    )
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _prompt_from_transcript(
+    transcript_path: str, expected_message_id: str = "", expected_conversation_id: str = ""
+) -> str:
     """从 Cursor transcript JSONL 读取最近一条用户消息（UTF-8 真源）。
 
     这是绕过 Cursor Windows hook stdin 编码 bug 的主路径：
@@ -363,10 +407,11 @@ def _prompt_from_transcript(transcript_path: str) -> str:
         return ""
     last = ""
     try:
-        # 大文件只扫尾部，避免拖慢 hook
-        data = path.read_bytes()
-        if len(data) > 2_000_000:
-            data = data[-2_000_000:]
+        # 大文件实际只读尾部，避免先将完整 transcript 放进内存。
+        with path.open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, stream.tell() - 2_000_000))
+            data = stream.read(2_000_000)
         text = data.decode("utf-8", errors="replace")
         for line in text.splitlines():
             line = line.strip()
@@ -376,9 +421,19 @@ def _prompt_from_transcript(transcript_path: str) -> str:
                 obj = json.loads(line)
             except Exception:
                 continue
-            if obj.get("role") != "user":
+            if not isinstance(obj, dict) or obj.get("role") != "user":
                 continue
             msg = obj.get("message") or {}
+            if not isinstance(msg, dict):
+                continue
+            if expected_message_id:
+                actual = _event_identity(obj, "message") or _event_identity(msg, "message")
+                if actual != expected_message_id:
+                    continue
+            if expected_conversation_id:
+                actual = _event_identity(obj, "conversation") or _event_identity(msg, "conversation")
+                if actual and actual != expected_conversation_id:
+                    continue
             content = msg.get("content")
             blobs: List[str] = []
             if isinstance(content, str):
@@ -403,11 +458,8 @@ def _prompt_from_transcript(transcript_path: str) -> str:
 def _extract_prompt(data: Dict[str, Any]) -> Tuple[str, str]:
     """从 Cursor beforeSubmitPrompt 的 JSON 中提取用户文本。
 
-    官方字段是顶层 ``prompt``。因 Cursor 在非 UTF-8 Windows 上会污染该字段
-    （#159259 / #142878 / #146604），本函数在 Windows 上**优先**改读
-    ``transcript_path`` JSONL（#162295），仅在无 transcript 时用 stdin +
-    mojibake 兜底。返回 (prompt, matched_path)，matched_path 便于诊断
-    （如 ``prompt_field: transcript_path``）。
+    保留可读的本轮 stdin；只有缺失/明确损坏且 transcript 消息 ID 匹配时才恢复。
+    无法核对身份时保守返回空文本，不把上一轮消息当成本轮命令。
     """
     prompt = ""
     matched = ""
@@ -450,20 +502,21 @@ def _extract_prompt(data: Dict[str, Any]) -> Tuple[str, str]:
             if prompt:
                 break
 
-    # 主绕过：#162295 —— transcript 文件是真 UTF-8；路径字段为 ASCII 不会被污染。
-    # Windows 上只要能读到 user_query，就优先用它（即使 stdin prompt「看起来」可读）。
-    tp = data.get("transcript_path")
-    if isinstance(tp, str) and tp.strip():
-        from_tr = _prompt_from_transcript(tp.strip())
-        if from_tr:
-            if (
-                not prompt
-                or _looks_garbled(prompt)
-                or sys.platform.startswith("win")
-            ):
-                return from_tr, "transcript_path"
+    if prompt and not _looks_garbled(prompt):
+        return prompt, matched
 
-    return prompt, matched
+    # transcript_path 指向的最后消息可能仍是上一轮，必须核对本次消息身份。
+    tp = data.get("transcript_path")
+    message_id = _event_identity(data, "message")
+    if isinstance(tp, str) and tp.strip() and message_id:
+        from_tr = _prompt_from_transcript(
+            tp.strip(), expected_message_id=message_id,
+            expected_conversation_id=_event_identity(data, "conversation")
+        )
+        if from_tr:
+            return from_tr, "transcript_path"
+
+    return "", ""
 
 
 def _describe_keys(data: Dict[str, Any]) -> List[str]:
@@ -509,23 +562,107 @@ def _bootstrap_core() -> Path:
     return start
 
 
+def _runtime_root(core_root: Path) -> Path:
+    """复用部署路径定位，验证入口无需依赖调用方的当前目录。"""
+    try:
+        from lib.repo_paths import RUNTIME_ROOT
+        return RUNTIME_ROOT
+    except Exception:
+        return core_root.parent / "yggforge-runtime"
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _trigger_path(runtime_root: Path, conversation_id: str, message_id: str = "") -> Path:
+    """ID 仅作哈希键，不允许宿主 ID 影响文件路径边界。"""
+    directory = runtime_root / "cache" / "triggers" / _digest(conversation_id)
+    return directory / ((_digest(message_id) + ".json") if message_id else "latest.json")
+
+
+def _atomic_json(path: Path, result: Dict[str, Any]) -> None:
+    """原子替换 JSON，读者只会看见完整的旧文件或新文件。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".trigger-", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(result, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def read_trigger(
+    runtime_root: Path, conversation_id: str, *, prompt: Optional[str] = None,
+    message_id: str = "", now: Optional[float] = None
+) -> Dict[str, Any]:
+    """校验本会话、本条消息和 5 分钟时效；失败只返回 skip，不信任旧全局缓存。"""
+    def skip(reason: str) -> Dict[str, Any]:
+        return {"should_trigger": False, "action": "skip", "validation": reason}
+    if not conversation_id or (prompt is None and not message_id):
+        return skip("缺少会话或本轮消息身份；请按本次消息重新检测")
+    try:
+        result = json.loads(_trigger_path(runtime_root, conversation_id, message_id).read_text(encoding="utf-8"))
+        if not isinstance(result, dict) or result.get("protocol_version") != 2:
+            return skip("不支持的触发协议")
+        if result.get("conversation_id") != conversation_id:
+            return skip("会话不匹配")
+        if message_id and result.get("message_id") != message_id:
+            return skip("消息不匹配")
+        if not result.get("message_id"):
+            return skip("缺少消息 ID")
+        issued = float(result["created_at_unix"])
+        age = (time.time() if now is None else now) - issued
+        if not math.isfinite(issued) or age < -5 or age > TRIGGER_MAX_AGE_SECONDS:
+            return skip("触发结果已过期或时间无效")
+        saved_prompt = result.get("prompt")
+        if not isinstance(saved_prompt, str) or result.get("prompt_sha256") != _digest(saved_prompt.strip()):
+            return skip("触发文本校验失败")
+        if prompt is not None and result.get("prompt_sha256") != _digest(prompt.strip()):
+            return skip("本轮文本不匹配")
+        result["validation"] = "matched"
+        return result
+    except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+        return skip("没有可用的本轮触发结果")
+
+
+def _read_trigger_cli() -> int:
+    parser = argparse.ArgumentParser(description="校验当前会话/消息的 hook 触发结果")
+    parser.add_argument("--read-trigger", action="store_true")
+    parser.add_argument("--conversation-id", required=True)
+    parser.add_argument("--message-id", default="")
+    parser.add_argument("--prompt")
+    parser.add_argument("--prompt-from-env", action="store_true", help="从 YGG_TRIGGER_PROMPT 读本轮原文")
+    args = parser.parse_args()
+    prompt = os.environ.get("YGG_TRIGGER_PROMPT") if args.prompt_from_env else args.prompt
+    core_root = _bootstrap_core()
+    result = read_trigger(_runtime_root(core_root), args.conversation_id, prompt=prompt, message_id=args.message_id)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def main() -> int:
     _stdout_utf8()
+
+    if "--read-trigger" in sys.argv[1:]:
+        return _read_trigger_cli()
 
     core_root = _bootstrap_core()
     detector = core_root / "scripts" / "hooks" / "trigger_detector.py"
 
-    cache_file = None
-    try:
-        from lib.repo_paths import RUNTIME_ROOT
-
-        cache_file = RUNTIME_ROOT / "cache" / "last_trigger.json"
-    except Exception:
-        cache_file = core_root / "yggforge-runtime" / "cache" / "last_trigger.json"
+    runtime_root = _runtime_root(core_root)
 
     # 二进制读 stdin：对照 Cursor Windows 管道实际字节（#159259 / #142878）
-    raw_bytes = _read_stdin_bytes()
-    raw = _decode_stdin(raw_bytes)
+    try:
+        raw_bytes = _read_stdin_bytes()
+        raw = _decode_stdin(raw_bytes)
+    except Exception as exc:
+        print(json.dumps({"continue": True, "user_message": "[ygg 钩子] 输入读取失败，已跳过本次检测: {}".format(exc)}, ensure_ascii=False))
+        return 0
     _maybe_debug_stdin(raw)
     # 调试模式才落盘原始字节，便于对照 Cursor 实际编码（截断到 64KB）
     if os.environ.get("YGG_DEBUG_STDIN", "").strip().lower() in ("1", "true", "yes"):
@@ -551,21 +688,18 @@ def main() -> int:
         # 字节级正则抽出后注入 data，让 _extract_prompt 的 transcript 主绕过
         # 仍能工作——避免 json.loads 失败即恒 skip、default_trigger 静默失效。
         try:
-            m = re.search(rb'"transcript_path"\s*:\s*"([^"]+)"', raw_bytes)
-            if m:
-                tp = m.group(1).decode("utf-8", errors="replace")
-                data = {"transcript_path": tp}
-                parse_error = parse_error + " [transcript_path recovered from raw bytes]"
+            # 同时恢复消息 ID，不能只根据 transcript_path 取上一轮消息。
+            for key in ("transcript_path", "conversation_id", "session_id", "message_id", "generation_id", "request_id"):
+                pattern = rb'"' + key.encode("ascii") + rb'"\s*:\s*("(?:\\.|[^"\\])*")'
+                match = re.search(pattern, raw_bytes)
+                if match:
+                    data[key] = json.loads(match.group(1).decode("utf-8"))
         except Exception:
             pass
 
     prompt, matched = _extract_prompt(data)
     key_desc = _describe_keys(data) if data else []
     _write_heartbeat(raw, prompt_ok=bool(prompt), keys=key_desc)
-
-    # 有 raw 却提不出 prompt → 强制落盘，便于下次对照真实字段
-    if raw.strip() and not prompt:
-        _maybe_debug_stdin(raw, force=True)
 
     result = {
         "should_trigger": False,
@@ -625,18 +759,27 @@ def main() -> int:
                 "chat_default_trigger": None,
             }
 
-    try:
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
     out = {"continue": True}
-    if result.get("should_trigger"):
-        out["user_message"] = (
-            "[ygg 钩子] should_trigger=true (action={})，已写入 {}。"
-            "agent 将先读取检索结果再回答。"
-        ).format(result.get("action"), cache_file)
+    conversation_id = _event_identity(data, "conversation")
+    if conversation_id:
+        supplied_message_id = _event_identity(data, "message")
+        message_id = supplied_message_id or uuid.uuid4().hex
+        created_at = time.time()
+        result.update({
+            "protocol_version": 2, "conversation_id": conversation_id,
+            "message_id": message_id, "message_id_source": "host" if supplied_message_id else "generated",
+            "created_at": datetime.fromtimestamp(created_at, timezone.utc).isoformat(),
+            "created_at_unix": created_at, "prompt_sha256": _digest(prompt.strip()),
+        })
+        try:
+            _atomic_json(_trigger_path(runtime_root, conversation_id, message_id), result)
+            _atomic_json(_trigger_path(runtime_root, conversation_id), result)
+            if result.get("should_trigger"):
+                out["user_message"] = "[ygg 钩子] action={}，已保存本会话触发结果；消费前需校验本轮消息。".format(result.get("action"))
+        except (OSError, ValueError, UnicodeError):
+            out["user_message"] = "[ygg 钩子] 触发结果保存失败；请按本次消息重新检测。"
+    else:
+        out["user_message"] = "[ygg 钩子] 宿主未提供会话 ID；未写全局缓存，请按本次消息重新检测。"
     print(json.dumps(out, ensure_ascii=False))
     return 0
 

@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-from lib.repo_paths import ensure_layout
 from cli.errors import YggError
 from cli.intent import infer_intent
 from cli.routes import route_explicit
@@ -64,7 +63,6 @@ def _stdout_utf8() -> None:
 
 def main() -> int:
     _stdout_utf8()
-    ensure_layout()
     parser = build_parser()
     args = parser.parse_args()
 

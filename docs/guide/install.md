@@ -319,27 +319,17 @@ status
 2. **安装 PowerShell 7**：把 `pwsh` 放进 PATH；Cursor 会优先用它跑 hook，I/O 默认 UTF-8（个别版本仍无效，可再试方案 1）。
 3. **本仓库已做代码绕过**：`ygg_pre_submit.py` 在 Windows 上优先从 stdin 里的 `transcript_path`（ASCII 路径）读取 JSONL 中最近 `<user_query>`（文件本身是合法 UTF-8，见 #162295），不再依赖被污染的 `prompt` 字段；并保留 mbcs 回环作为兜底。Windows 入口用 `py -X utf8`（`hooks.windows.json`）。实现注释见脚本模块 docstring 与 `profiles/cursor/hooks/README.md`。
 
-验证：发中文消息后看 `last_trigger.json` 的 `prompt` 与 `prompt_field`（应为 `transcript_path` 或正确中文）。
+验证：发中文消息后，通过 --read-trigger 核对本轮匹配结果；有效当前 prompt 不应被旧 transcript 替换。
 
-### hook 取不到 prompt（`last_trigger.json` 恒为 skip 或不刷新）
+### hook 取不到 prompt 或找不到本轮匹配结果
 
-若 `yggforge-runtime/cache/last_trigger.json` 恒为 `{"action":"skip","reason":"hook 未取到 prompt","prompt":""}`，或文件时间戳不随消息提交更新，说明 hook 没被 Cursor 真正调用，或被调用了但 stdin 没拿到内容。
+1. 改 hooks.json 后重启 Cursor，在 Hooks 页面确认两个钩子已经注册。
+2. 发消息后检查 hook heartbeat 与 Hooks output，区分未被调用、空输入、超限或字段提取失败。
+3. 当前有效 prompt 优先使用；缺失或损坏时，只有 transcript 消息身份匹配才恢复。普通问号不会被当作必需替换文本的依据。
+4. 消费者通过 ygg_pre_submit.py --read-trigger 验证当前 conversation-id、message-id/原文与时间。数据位于 runtime/cache/triggers/，共享 last_trigger.json 不再作为路由输入。
+5. 诊断时可显式设置 YGG_DEBUG_STDIN=1；不要把原始对话调试文件提交到仓库。
 
-排查步骤（按顺序）：
-
-1. **重启 Cursor**。Cursor 只在启动时加载 `hooks.json`，会话中途新建/修改的不会自动生效。这是最常见的根因。
-2. 重启后打开 **Customize → Hooks** 标签，确认 `sessionStart` 与 `beforeSubmitPrompt` 两条都出现。没出现说明 `hooks.json` 没被加载（检查 `~/.cursor/hooks.json` 是否存在、是否带 BOM——JSON 不应带 BOM）。
-3. 发一条消息后看 `~/.cursor/ygg_hook_heartbeat.txt`：
-   - 时间戳随消息更新 → hook 被 Cursor 调用了，继续下一步
-   - 不更新 → hook 没被触发。Windows 上多半是 `py`/`python` 不在 Cursor GUI 进程的 PATH；本项目已改用 `py` launcher（`C:\Windows\py.exe`，系统级），若仍不生效检查 `py` 是否可执行
-4. 看 heartbeat 行内容：
-   - `raw_len=0` → stdin 为空（Cursor 没把 payload 喂进来）
-   - `raw_len>0` 且 `prompt_ok=False` → JSON 有内容但字段提取失败。此时 hook 会强制写 `~/.cursor/ygg_debug_stdin.txt`，且 `last_trigger.json` 的 `stdin_keys` 会列出顶层 key:type。对照官方字段应是顶层 `prompt`（字符串）；若类型是 `list`/`dict`，脚本已尝试 coerce，仍失败则把 debug 文件里的结构反馈给维护者
-   - `prompt_ok=True` → 提取成功，继续看 `last_trigger.json` 的 `action`
-5. 也可设 `YGG_DEBUG_STDIN=1` 让每次调用都落盘 raw stdin（默认仅提取失败时落盘）
-6. hook 执行报错看 Cursor 的 **Hooks output channel**（View → Output 选 Hooks）
-
-hook 脚本已改为走 `sys.stdin.buffer.read()` 再 UTF-8 解码，并兼容 list/dict 形态的 `prompt`；传给 `trigger_detector` 时用环境变量 `YGG_TRIGGER_PROMPT`，避免 Windows argv 截断中文。Windows 用 `py` launcher、Linux 用 `python3`（见 `deploy.md` 第 6 节）。
+输入按二进制循环读到 EOF，上限 4 MiB；Windows 用 py -X utf8，Linux/macOS 用 python3。没有可用 hook 或消息身份时，Agent 按本轮 AGENTS 约定判断或重新检测。
 
 ## 10. 推荐首次安装顺序
 

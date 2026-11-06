@@ -167,3 +167,7 @@ Cursor IDE 通过 `beforeSubmitPrompt` 钩子自动调用 `trigger_detector.py` 
 
 部署建议：将本段规则写入 Agent 工作区的 `AGENTS.md` 或 `SOUL.md`，Agent 即可自动获得 YggForge 触发能力，无需额外脚本或配置。
 
+
+## 发布隐私边界
+
+使用 `docs/concepts/publication-boundary.md` 的准入规则。框架可按任务授权同步；带“隐私”标签的记忆或附件不得公开，其他记忆需逐项得到用户同意。公开索引从准入内容重建，运行时、本机配置和私有历史不进入发布。

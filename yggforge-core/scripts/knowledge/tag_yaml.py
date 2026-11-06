@@ -5,6 +5,7 @@
 from __future__ import print_function
 
 from pathlib import Path
+import json
 from typing import Any, Dict, Optional
 
 try:
@@ -19,6 +20,14 @@ CONTENT_ROOT = CORE_ROOT
 REPO_ROOT = CONTENT_ROOT
 DEFAULT_SYNONYMS_PATH = CONTENT_ROOT / "graph" / "tag-synonyms.yaml"
 DEFAULT_TAG_GRAPH_PATH = CONTENT_ROOT / "graph" / "tag-graph.yaml"
+
+
+def _scalar_value(text: str) -> Any:
+    """保留最小 YAML 子集的数字和布尔类型。"""
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        return text
 
 
 def _parse_simple_synonyms_yaml(text: str) -> Dict[str, Any]:
@@ -59,7 +68,7 @@ def _parse_simple_tag_graph_yaml(text: str) -> Dict[str, Any]:
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith("version:"):
-            data["version"] = stripped.split(":", 1)[1].strip()
+            data["version"] = _scalar_value(stripped.split(":", 1)[1].strip())
             continue
         if stripped == "defaults:":
             section = "defaults"
@@ -71,7 +80,7 @@ def _parse_simple_tag_graph_yaml(text: str) -> Dict[str, Any]:
             continue
         if section == "defaults" and ":" in stripped and not stripped.startswith("-"):
             key, val = stripped.split(":", 1)
-            data["defaults"][key.strip()] = val.strip()
+            data["defaults"][key.strip()] = _scalar_value(val.strip())
             continue
         if section != "tags":
             continue

@@ -41,7 +41,7 @@
 - `knowledge/templates/README.md`
 - `knowledge/lessons/README.md`
 
-本 profile 把强制检索钩子投影到 **用户级** `~/.cursor/hooks/` + `~/.cursor/hooks.json`（见 `profiles/cursor/hooks/`），由 `ygg deploy link cursor` 安装。回答任何用户消息前：先 Read `yggforge-runtime/cache/last_trigger.json`（或部署后的等价路径），再按 `action` 路由。
+本 profile 把强制检索钩子投影到 **用户级** `~/.cursor/hooks/` + `~/.cursor/hooks.json`（见 `profiles/cursor/hooks/`），由 `ygg deploy link cursor` 安装。回答任何用户消息前：按 `plugins/skills/yggforge.md`「触发结果验证」调用核心包内绝对路径的 `profiles/cursor/hooks/ygg_pre_submit.py --read-trigger`，传入本会话 ID 与本轮原文（宿主消息 ID 可得时一并传入）。只有 `validation=matched` 才按 `action` 路由；不消费旧全局 `cache/last_trigger.json`。
 
 薄规则文件真源在核心包内 `profiles/cursor/rules/`（含 `ygg-default-trigger.mdc` 与 `ygg-answer-synthesis.mdc`）。**全局部署不再投影到 `~/.cursor/rules/`**——Cursor 原生不自动加载该目录（官方 Project Rules 仅认项目内 `.cursor/rules/`；User Rules 在 Settings 纯文本）。会话开始时主动 Read 核心包内上述两个 `.mdc`（或 `knowledge/rules/default-trigger-routing.md` 与 `standing-preference.md` 真源）。若要让 Cursor 原生自动加载薄规则，用项目级部署 `ygg deploy --scope project` 把它们投影到 `<repo>/.cursor/rules/*.mdc`。
 
@@ -95,7 +95,7 @@ ygg remember "排障失败一次后必须先 web search……以后一直这样"
 - 闲聊问候、简单事实问答、已有足够上下文的连续对话
 - 用户说「这次不用查记忆」「静默模式」
 
-**强制钩子（部署后自动启用）**：`beforeSubmitPrompt` 钩子在每条用户消息提交前自动运行 `scripts/hooks/trigger_detector.py`，把检测结果（`should_trigger` + `action`）落盘到 `yggforge-runtime/cache/last_trigger.json`；`sessionStart` 注入 ygg 路由与**三源综合回答**协议。agent 回答前必须先 Read 该文件并按 `action` 路由；作答时综合模型推理、ygg 检索与联网搜索（`ygg-answer-synthesis.mdc`）。是否触发、是否真正执行 ygg 命令由 `behavior` 配置与门禁决定。本机覆盖：`yggforge-runtime/config/behavior.local.yaml`。详见 `docs/reference/triggers.md` 第 6 节。
+**强制钩子（部署后自动启用）**：`beforeSubmitPrompt` 钩子在每条用户消息提交前自动运行 `scripts/hooks/trigger_detector.py`，把检测结果按会话/消息身份原子保存到 `yggforge-runtime/cache/triggers/`，附带UTC时间和原文摘要；`sessionStart` 提供本会话 ID 及 ygg 路由与**三源综合回答**协议。agent 回答前必须用 `--read-trigger` 验证本会话、本条消息/原文及 5 分钟时效，匹配后才按 `action` 路由；作答时综合模型推理、ygg 检索与联网搜索（`ygg-answer-synthesis.mdc`）。是否触发、是否真正执行 ygg 命令由 `behavior` 配置与门禁决定。本机覆盖：`yggforge-runtime/config/behavior.local.yaml`。详见 `docs/reference/triggers.md` 第 6 节。
 
 推荐内部顺序：`ygg tag --list`（可选）→ `ygg associate --tag … --json` → `ygg recall … --json`。
 
@@ -117,10 +117,10 @@ python3 scripts/cmds/ops/apply_credentials_mcp.py \
 处理用户问题 / 任务时，须综合三源（真源 `knowledge/rules/standing-preference.md`；Cursor 薄规则 `profiles/cursor/rules/ygg-answer-synthesis.mdc`）：
 
 1. 先用模型自身理解进行推理；
-2. 从对话提炼 seed tags，执行 `ygg associate --tag ...`（可用 `--hop`）；按 `last_trigger.json` 的 `action` 必要时 `recall`；
+2. 从对话提炼 seed tags，执行 `ygg associate --tag ...`（可用 `--hop`）；按已通过会话/消息与时效验证的 `action` 必要时 `recall`；
 3. 联网搜索（WebSearch / WebFetch）：事实类、时效敏感类问题必须搜索；
 4. 阅读 ygg 命中真源条目，把三源结果综合纳入回答，标注来源与置信度；不得仅凭 ygg 命中作答。
 
-`skip` 时可跳过 ygg 检索省 token，但仍须模型推理 + 按需联网 + 综合作答。
+匹配后的 `skip` 可跳过 ygg 检索省 token，但仍须模型推理 + 按需联网 + 综合作答。无hook、无可核对会话 ID、过期或匹配失败时，按本轮消息内化 AGENTS.md 触发规则或重新检测，不沿用其它会话/上一条动作，也不要求用户重复授权已明确要求的操作。
 
 索引重建：`ygg graph build`。约定见 `docs/concepts/retrieval-conventions.md` 与 `graph/README.md`。

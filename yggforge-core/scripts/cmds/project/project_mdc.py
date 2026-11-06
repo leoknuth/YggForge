@@ -22,8 +22,9 @@
 
 from __future__ import print_function
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
+import re
 
 # cmds/<domain>/<script>.py → scripts/
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2]
@@ -58,6 +59,15 @@ def default_mdc_target(rule_path: Path) -> Path:
     rel = rule_path.resolve().relative_to(_rules_root().resolve())
     return CORE_ROOT / "profiles" / "cursor" / "rules" / rel.with_suffix(".mdc")
 
+def _safe_target(target: Path) -> Path:
+    """投影只能落入 Cursor 规则根；resolve 后再次阻止 symlink 越界。"""
+    root = CORE_ROOT.resolve() / "profiles" / "cursor" / "rules"
+    try:
+        target.resolve().relative_to(root)
+    except ValueError:
+        raise ProjectError("MDC 投影目标越界: {0}".format(target))
+    return target
+
 def resolve_mdc_targets(rule_path: Path, metadata: Dict[str, Any]) -> List[Path]:
     targets: List[Path] = []
     for item in as_str_list(metadata.get("projection")):
@@ -66,13 +76,13 @@ def resolve_mdc_targets(rule_path: Path, metadata: Dict[str, Any]) -> List[Path]
             continue
         if text.startswith("yggforge-core/"):
             text = text[len("yggforge-core/") :]
-        # profiles/... 相对 CORE_ROOT；也接受仓库根相对
+        # 真源 projection 只接受 core 相对、且没有父目录穿越的路径。
+        if Path(text).is_absolute() or PureWindowsPath(text).drive or ".." in Path(text).parts:
+            raise ProjectError("MDC projection 必须为安全的 core 相对路径: {0}".format(item))
         cand = CORE_ROOT / text
-        if not cand.exists() and (REPO_ROOT / text).exists():
-            cand = REPO_ROOT / text
-        targets.append(cand)
+        targets.append(_safe_target(cand))
     if not targets:
-        targets.append(default_mdc_target(rule_path))
+        targets.append(_safe_target(default_mdc_target(rule_path)))
     return targets
 
 def resolve_mode(rule_path: Path, metadata: Dict[str, Any], targets: List[Path]) -> str:
@@ -123,6 +133,8 @@ def iter_always_apply_rules() -> List[Tuple[Path, Dict[str, Any], str]]:
             continue
         text = path.read_text(encoding="utf-8-sig")
         meta, body = parse_front_matter(text)
+        if meta.get("type") != "rule" or meta.get("status") != "active":
+            continue
         if not _truthy(meta.get("always_apply")):
             continue
         rows.append((path, meta, body))
@@ -139,6 +151,7 @@ def project_one(
     targets = resolve_mdc_targets(rule_path, metadata)
     mode = resolve_mode(rule_path, metadata, targets)
     for target in targets:
+        _safe_target(target)
         rel_t = _rel_to_core(target)
         rel_r = _rel_to_core(rule_path)
         if mode == "manual":
@@ -167,14 +180,32 @@ def project_one(
 
 def run(check_only: bool, write: bool) -> int:
     rows = iter_always_apply_rules()
-    if not rows:
-        print("project_mdc  : no rules with always_apply: true")
-        return 0
+    # 在任何写入前验证全部目标，避免处理到后半程才发现危险路径。
+    expected = set()
+    for rule_path, meta, _body in rows:
+        expected.update(t.resolve() for t in resolve_mdc_targets(rule_path, meta))
     problems = 0
     for rule_path, meta, body in rows:
         for line in project_one(rule_path, meta, body, write=write and not check_only):
             print(line)
             if line.startswith("missing") or line.startswith("would_write"):
+                problems += 1
+    # 生成标记就是来源追踪记录；不撤销手写文件，只清理由本工具生成的孤立投影。
+    projection_root = CORE_ROOT / "profiles" / "cursor" / "rules"
+    if projection_root.exists():
+        for target in sorted(projection_root.rglob("*.mdc")):
+            _safe_target(target)
+            old = target.read_text(encoding="utf-8-sig")
+            if "ygg-project: manual" in old:
+                continue
+            generated = re.search(r"<!--\s*ygg-project:\s*sync\s*\|\s*source:\s*(.*?)\s*-->", old)
+            if not generated or target.resolve() in expected:
+                continue
+            if write and not check_only:
+                target.unlink()
+                print("removed     : {0} (退役或来源/目标已变更)".format(_rel_to_core(target)))
+            else:
+                print("orphan      : {0} (退役或来源/目标已变更)".format(_rel_to_core(target)))
                 problems += 1
     print("project_mdc  : rules={0}".format(len(rows)))
     if check_only and problems:

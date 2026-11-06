@@ -14,77 +14,25 @@
 
 ## 每次会话启动流程
 
-Before doing anything else:
-
-1. Read `SOUL.md` — this is who you are
-2. Read `USER.md` — this is who you're helping
-3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
-4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
-
-Don't ask permission. Just do it.
+按 OpenClaw 自身配置加载 `SOUL.md`、`IDENTITY.md` 和用户资料；YggForge 不接管 persona。
+需要工程上下文时，从本核心包索引出发，使用 `ygg recall` / `ygg associate` 窄范围检索。
 
 ## Memory
 
-You wake up fresh each session. These files are your continuity:
+长期工程知识只有一条写入链路：`ygg remember` → 仓库级 inbox → 人审晋升。
+不要求同时维护 `MEMORY.md`、`USER.md` 或逐日文件作为第二份工程知识真源。
+临时过程笔记可写本机运行时目录；不得自动把全部聊天、调试过程或秘密写成长期知识。
 
-- **Daily notes:** `memory/YYYY-MM-DD.md` (create `memory/` if needed) — raw logs of what happened
-- **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
+### Channel 标记（沟通渠道）
 
-Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
+写入时通过 `--channel` 标明实际沟通渠道，取值与别名由核心包 `config/channels.yaml` 管理。
+私聊偏好与群聊工作决策要保留来源区别；跨渠道检索时标注不同语境，不把私人内容披露给群聊。
 
-### 📡 Channel 标记（沟通渠道）
+### 用户要求记住时
 
-每次记录记忆时，必须标注沟通渠道。这在多平台场景下至关重要——同样的话在 Kimi app 私聊和钉钉工作群里说，语境完全不同。
-
-**Channel 取值：**
-
-| Channel | 场景 |
-|---------|------|
-| `kimi-claw` | Kimi 官方 Web/App（主会话） |
-| `feishu-dm` | 飞书单聊 |
-| `feishu-group` | 飞书群聊 |
-| `wechat` | 微信 ClawBot |
-| `dingtalk` | 钉钉 |
-| `discord-dm` | Discord 私信 |
-| `discord-group` | Discord 频道/群 |
-| `telegram` | Telegram |
-| `qq` | QQ |
-| `email` | 邮件 |
-| `heartbeat` | 心跳任务（无用户触发） |
-
-**记录格式（memory/YYYY-MM-DD.md）：**
-
-```markdown
-# 2026-07-22
-
-## [kimi-claw] 14:30 — 用户要求给 YggForge 加 channel 字段
-
-用户通过 Kimi app 提出...
-```
-
-**检索时的应用：**
-- 查询个人偏好 → 优先检索 `kimi-claw`、`wechat`、`feishu-dm` 等私聊渠道
-- 查询工作决策 → 优先检索 `dingtalk`、`feishu-group`、`discord-group` 等群聊渠道
-- 跨渠道同一话题 → 用关键词关联，标注不同视角
-
-### 🧠 MEMORY.md - Your Long-Term Memory
-
-- **ONLY load in main session** (direct chats with your human)
-- **DO NOT load in shared contexts** (Discord, group chats, sessions with other people)
-- This is for **security** — contains personal context that shouldn't leak to strangers
-- You can **read, edit, and update** MEMORY.md freely in main sessions
-- Write significant events, thoughts, decisions, opinions, lessons learned
-- This is your curated memory — the distilled essence, not raw logs
-- Over time, review your daily files and update MEMORY.md with what's worth keeping
-
-### 📝 Write It Down - No "Mental Notes"!
-
-- **Memory is limited** — if you want to remember something, WRITE IT TO A FILE
-- "Mental notes" don't survive session restarts. Files do.
-- When someone says "remember this" → update `memory/YYYY-MM-DD.md` or relevant file
-- When you learn a lesson → update AGENTS.md, TOOLS.md, or the relevant skill
-- When you make a mistake → document it so future-you doesn't repeat it
-- **Text > Brain** 📝
+- 用户说“记住”“写进错题本”时，优先调用 `ygg remember`，遵守本次授权与 behavior 门禁。
+- 暂不稳定的经验留在 inbox；进入强规则仍遵守晋升审核，不直接改写 AGENTS.md 或技能当成永久规则。
+- 不为检索自动补写另一份长期记忆文件，也不把“模型想记住”视为用户授权。
 
 ## Safety
 
@@ -229,24 +177,17 @@ You are free to edit `HEARTBEAT.md` with a short checklist or reminders. Keep it
 
 **Proactive work you can do without asking:**
 
-- Read and organize memory files
+- 使用 `ygg recall` / `ygg associate` 检索和理解已有知识
 - Check on projects (git status, etc.)
 - Update documentation
 - Commit and push your own changes
-- **Review and update MEMORY.md** (see below)
+- 用 `ygg dream --scan` 生成候选报告，晋升仍遵守门禁
 
-### 🔄 Memory Maintenance (During Heartbeats)
+### Memory Maintenance (During Heartbeats)
 
-Periodically (every few days), use a heartbeat to:
-
-1. Read through recent `memory/YYYY-MM-DD.md` files
-2. Identify significant events, lessons, or insights worth keeping long-term
-3. Update `MEMORY.md` with distilled learnings
-4. Remove outdated info from MEMORY.md that's no longer relevant
-
-Think of it like a human reviewing their journal and updating their mental model. Daily files are raw notes; MEMORY.md is curated wisdom.
-
-The goal: Be helpful without being annoying. Check in a few times a day, do useful background work, but respect quiet time.
+需要整理工程经验时，使用 `ygg dream --scan` 查重复与晋升候选。
+报告留在本机运行时层，后续写入或晋升走统一的 `ygg remember` / `ygg promote` 门禁。
+心跳不自动复制、清空或改写第二份长期工程记忆。
 
 ## YggForge 知识系统约束
 
@@ -348,13 +289,12 @@ This is a starting point. Add your own conventions, style, and rules as you figu
 
 <IMPORTANT_REMINDER>
 
-You **must actively read from and write to files in the workspace to persist information across sessions**. If you do not write, you will not remember. At any moment you feel the need to retrieve information, you should first check the files in the workspace, especially MEMORY.md, USER.md, and other memory-related files. You should also frequently write to these files to record relevant information from your conversations with the user.
+长期工程知识统一通过 `ygg remember` 进入仓库级 inbox，写入和晋升遵守 behavior 门禁。
+检索优先使用 `ygg recall` / `ygg associate`，不要求同时复制到 `MEMORY.md` 或 `USER.md`。
+会话临时笔记可留在本机运行时目录；不要把全部对话、调试过程或敏感内容自动晋升为长期知识。
+用户已经明确要求的记忆动作，按本次授权执行；没有明确记忆意图时不强制记录。
 
-You have the **kimi-search plugin installed, which allows you to access information from the internet**. Prioritize using search and fetch whenever you need to retrieve up-to-date information.
-
-Actively and continuously capture all conversation content into MEMORY.md, including but not limited to user preferences, key decisions, constraints, TODOs, and any new information shared in the conversation. In addition to this, ensure that all temporary details, process notes, intermediate conclusions, and contextual fragments are captured. The principle should be "capture first, refine later," ensuring that no detail, however small, is missed.
-
-When new information or any data requiring long-term storage is shared, immediately update both MEMORY.md and USER.md, as well as any other necessary files to ensure the persistence of the information. Each time new content or changes are introduced, it must be logged into these files for easy retrieval.
+需要时效信息时，使用当前环境实际可用的搜索和抓取工具，不假定特定插件已安装。
 
 For cron jobs, default the sessionTarget to "isolated" and set payload.kind="agentTurn". Only use sessionTarget="main" with payload.kind="systemEvent" when the user explicitly requests for a main-session system reminder. This helps in preserving the separation of different types of interactions and maintaining clarity between user sessions and system events.
 

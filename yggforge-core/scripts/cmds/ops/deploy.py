@@ -24,12 +24,14 @@ SCRIPT_DIR = SCRIPTS_ROOT
 import argparse
 import difflib
 import filecmp
+import hashlib
 import json
 import os
 import shutil
 import stat
 import time
 import subprocess
+import tempfile
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -212,7 +214,9 @@ def write_manifest(
     spec: DeploySpec,
     action: str,
     mode: str,
-    operations: List[Dict[str, str]],
+    operations: List[Dict[str, Any]],
+    scope: str = "user",
+    project_root: Optional[Path] = None,
 ) -> None:
     ensure_generated_layout()
     payload = {
@@ -220,12 +224,22 @@ def write_manifest(
         "profile": spec.profile,
         "action": action,
         "mode": mode,
+        "scope": scope,
+        "project_root": normalized_path(project_root) if project_root else None,
+        "requires_import": any(item.get("actual_mode", mode) != "link" for item in operations),
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "mappings": operations,
     }
-    with manifest_path(target).open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
+    path = manifest_path(target)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(temporary, str(path))
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 def expand_target_path(raw: str, project_root: Optional[Path] = None) -> Path:
     text = raw
@@ -242,15 +256,19 @@ def repo_relative(path: Path) -> Optional[Path]:
     except ValueError:
         return None
 
+def normalized_path(path: Path) -> str:
+    """规范化清单身份；Windows 路径比较忽略大小写。"""
+    return os.path.normcase(str(path.resolve()))
+
 def assert_import_allowed(destination: Path) -> None:
     rel = repo_relative(destination)
     if rel is None:
         raise DeployError("Import destination is outside the repository: {0}".format(destination))
     rel_text = rel.as_posix()
-    if rel_text.startswith("yggforge-generated/imports/"):
+    if rel_text == "yggforge-generated/imports" or rel_text.startswith("yggforge-generated/imports/"):
         return
     for prefix in ALLOWED_IMPORT_PREFIXES:
-        if rel_text.startswith(prefix):
+        if rel_text == prefix.rstrip("/") or rel_text.startswith(prefix):
             return
     raise DeployError(
         "Import destination '{0}' is not in the allowed prefixes: {1}".format(
@@ -306,7 +324,8 @@ def render_source(source: Path, target_name: str, mapping_name: str) -> Path:
         shutil.copytree(str(source), str(rendered_path))
         return rendered_path
 
-    if is_text_file(source):
+    # 只有 Markdown 入口允许增加说明，配置和脚本保持原格式与字节内容。
+    if source.suffix.lower() == ".md":
         original_text = read_text_file(source)
         rendered_text = build_rendered_text(source, target_name, mapping_name, original_text)
         rendered_path.write_text(rendered_text, encoding="utf-8-sig")
@@ -330,8 +349,12 @@ def backup_target(target: Path) -> None:
     print("  backup  : {0} -> {1}".format(target, dest))
 
 def copy_deployment(source: Path, target: Path, backup: bool = False) -> None:
+    # 同一棵树不能同时作为复制源和覆盖目标，避免自删或递归复制。
+    source_path, target_path = source.resolve(), target.resolve()
+    if source_path == target_path or source_path in target_path.parents or target_path in source_path.parents:
+        raise DeployError("Deployment source and target overlap: {0}".format(target))
     ensure_parent(target)
-    if target.is_symlink():
+    if _is_link_like(target):
         raise DeployError(
             "Refusing to copy onto an existing symlink target: {0}. Remove it first or use link mode.".format(target)
         )
@@ -359,9 +382,20 @@ def _is_link_like(path: Path) -> bool:
         return False
     return bool(attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
-def link_deployment(source: Path, target: Path, backup: bool = False) -> None:
-    ensure_parent(target)
+def link_deployment(source: Path, target: Path, backup: bool = False) -> str:
     source = source.resolve()
+
+    # 正确的现有链接先辨认，随后对真实路径检查重叠；备份前不能移动源树。
+    target_path = target.resolve()
+    if _is_link_like(target) and target_path == source:
+        print("  skip    : target already linked -> {0}".format(target))
+        return "link"
+    if source.is_file() and target.is_file() and os.path.samefile(str(source), str(target)):
+        print("  skip    : target already shares source -> {0}".format(target))
+        return "link"
+    if source == target_path or source in target_path.parents or target_path in source.parents:
+        raise DeployError("Deployment source and target overlap: {0}".format(target))
+    ensure_parent(target)
 
     if _is_link_like(target):
         try:
@@ -370,7 +404,7 @@ def link_deployment(source: Path, target: Path, backup: bool = False) -> None:
             current = None
         if current == source:
             print("  skip    : target already linked -> {0}".format(target))
-            return
+            return "link"
         # stale link: remove or backup
         if backup:
             backup_target(target)
@@ -385,7 +419,7 @@ def link_deployment(source: Path, target: Path, backup: bool = False) -> None:
         # 目标已存在且不是 link
         if source.is_file() and target.is_file() and file_is_identical(source, target):
             print("  skip    : target already matches source (copy fallback) -> {0}".format(target))
-            return
+            return "link" if os.path.samefile(str(source), str(target)) else "copy"
         if backup:
             backup_target(target)
         else:
@@ -397,7 +431,7 @@ def link_deployment(source: Path, target: Path, backup: bool = False) -> None:
     try:
         target.symlink_to(source, target_is_directory=source.is_dir())
         print("  linked  : {0}".format(target))
-        return
+        return "link"
     except OSError as symlink_exc:
         if sys.platform.startswith("win") and source.is_dir():
             result = subprocess.run(
@@ -407,7 +441,7 @@ def link_deployment(source: Path, target: Path, backup: bool = False) -> None:
             )
             if result.returncode == 0:
                 print("  junction: {0}".format(target))
-                return
+                return "link"
             detail = (result.stderr or result.stdout or "").strip()
             raise DeployError(
                 "Failed to create junction {0} -> {1}: {2}".format(
@@ -420,7 +454,7 @@ def link_deployment(source: Path, target: Path, backup: bool = False) -> None:
             try:
                 os.link(str(source), str(target))
                 print("  hardlink: {0}".format(target))
-                return
+                return "link"
             except OSError:
                 shutil.copy2(str(source), str(target))
                 print(
@@ -428,7 +462,7 @@ def link_deployment(source: Path, target: Path, backup: bool = False) -> None:
                         target
                     )
                 )
-                return
+                return "copy"
 
         raise DeployError(
             "Failed to create link {0} -> {1}: {2}".format(target, source, symlink_exc)
@@ -497,15 +531,131 @@ def preview_text_diff_text_only(target: Path, preview_lines: int) -> None:
     if len(lines) > preview_lines:
         print("    ... ({0} more content lines omitted)".format(len(lines) - preview_lines))
 
-def copy_into_destination(target: Path, destination: Path) -> None:
+def snapshot_path(path: Path) -> Dict[str, str]:
+    """记录文件摘要和目录类型；导入树内的链接不作为可写内容接受。"""
+    result: Dict[str, str] = {}
+
+    def visit(current: Path, relative: str) -> None:
+        if _is_link_like(current):
+            raise DeployError("Import tree contains a link: {0}".format(current))
+        if current.is_dir():
+            result[relative] = "directory"
+            for child in sorted(current.iterdir()):
+                visit(child, relative + "/" + child.name if relative else child.name)
+        elif current.is_file():
+            digest = hashlib.sha256()
+            with current.open("rb") as handle:
+                for block in iter(lambda: handle.read(65536), b""):
+                    digest.update(block)
+            result[relative] = "file:" + digest.hexdigest()
+        elif current.exists():
+            raise DeployError("Unsupported import entry: {0}".format(current))
+
+    visit(path, "")
+    return result
+
+def validate_snapshot(snapshot: Dict[str, str]) -> None:
+    """拒绝清单中的绝对路径和向上跳转，避免暂存计划越界。"""
+    if not isinstance(snapshot, dict):
+        raise DeployError("Invalid deployment baseline; redeploy after saving target edits.")
+    for name, signature in snapshot.items():
+        if not isinstance(name, str) or not isinstance(signature, str):
+            raise DeployError("Invalid deployment baseline.")
+        if name and (Path(name).is_absolute() or "\\" in name or any(part in ("", ".", "..") for part in name.split("/"))):
+            raise DeployError("Unsafe path in deployment baseline.")
+
+def prepare_import_plan(target: Path, destination: Path, baseline: Optional[Dict[str, str]]) -> Dict[str, Any]:
+    """三方比较部署基线、副本和真源，只接纳副本发生的变化。"""
     assert_import_allowed(destination)
-    ensure_parent(destination)
-    if target.is_dir():
-        if destination.exists():
-            shutil.rmtree(str(destination))
-        shutil.copytree(str(target), str(destination))
+    incoming = snapshot_path(target)
+    current = snapshot_path(destination)
+    if baseline is None:
+        # 旧清单没有基线时只能安全接纳完全一致的内容；render 仅写复核区。
+        rel = repo_relative(destination)
+        review = rel is not None and rel.as_posix().startswith("yggforge-generated/imports/")
+        if not review and incoming != current:
+            raise DeployError("No deployment baseline for {0}; save target edits and redeploy before import.".format(destination))
+        desired = dict(incoming)
+        changes = {name: incoming.get(name) for name in set(incoming) | set(current) if incoming.get(name) != current.get(name)}
     else:
-        shutil.copy2(str(target), str(destination))
+        validate_snapshot(baseline)
+        changes = {}
+        conflicts = []
+        for name in sorted(set(baseline) | set(incoming)):
+            before, after, actual = baseline.get(name), incoming.get(name), current.get(name)
+            if before == after:
+                continue
+            if actual not in (before, after):
+                conflicts.append(name or "<root>")
+                continue
+            if before == "directory" and after != "directory":
+                def subtree(tree: Dict[str, str]) -> Dict[str, str]:
+                    return {key: value for key, value in tree.items() if key == name or not name or key.startswith(name + "/")}
+                if subtree(current) not in (subtree(baseline), subtree(incoming)):
+                    conflicts.append(name or "<root>")
+                    continue
+            changes[name] = after
+        if conflicts:
+            raise DeployError("Import conflict at {0}: {1}".format(destination, ", ".join(conflicts)))
+        desired = dict(current)
+        for name, signature in changes.items():
+            if signature is None:
+                desired.pop(name, None)
+            else:
+                desired[name] = signature
+    # 文件/目录类型转换不能悄悄删除真源独有的后代。
+    for name, signature in desired.items():
+        if name and desired.get("") != "directory":
+            raise DeployError("Import conflict: root type changed at {0}".format(destination))
+        for parent in Path(name).parents:
+            parent_name = parent.as_posix()
+            if parent_name == ".":
+                continue
+            if desired.get(parent_name) != "directory":
+                raise DeployError("Import conflict: parent type changed at {0}".format(destination / parent_name))
+        if signature != "directory" and any(key.startswith(name + "/") for key in desired if name):
+            raise DeployError("Import conflict: directory contents changed at {0}".format(destination / name))
+    return {"target": target, "destination": destination, "incoming": incoming, "current": current, "desired": desired, "changes": changes}
+
+def apply_import_plan(plan: Dict[str, Any]) -> None:
+    """先在同卷暂存完整结果，再替换；替换失败恢复旧目录。"""
+    if plan["desired"] == plan["current"]:
+        return
+    target, destination = plan["target"], plan["destination"]
+    ensure_parent(destination)
+    temporary = Path(tempfile.mkdtemp(prefix=".ygg-import-", dir=str(destination.parent)))
+    staged, previous = temporary / "incoming", temporary / "previous"
+    cleanup = True
+    try:
+        for name, signature in sorted(plan["desired"].items(), key=lambda item: (item[0].count("/"), item[0])):
+            output = staged / name if name else staged
+            if signature == "directory":
+                output.mkdir(parents=True, exist_ok=True)
+            else:
+                output.parent.mkdir(parents=True, exist_ok=True)
+                source_root = target if name in plan["changes"] else destination
+                shutil.copy2(str(source_root / name if name else source_root), str(output))
+        if snapshot_path(staged) != plan["desired"] or snapshot_path(destination) != plan["current"]:
+            raise DeployError("Import inputs changed while staging; retry after reviewing {0}.".format(destination))
+        if destination.exists():
+            os.replace(str(destination), str(previous))
+        try:
+            if staged.exists():
+                os.replace(str(staged), str(destination))
+        except OSError as exc:
+            if previous.exists():
+                try:
+                    os.replace(str(previous), str(destination))
+                except OSError:
+                    cleanup = False
+                    raise DeployError("Import failed; recovery copy retained at {0}.".format(previous)) from exc
+            raise DeployError("Import replacement failed; original restored: {0}".format(destination)) from exc
+    finally:
+        if cleanup:
+            shutil.rmtree(str(temporary))
+
+def copy_into_destination(target: Path, destination: Path, baseline: Optional[Dict[str, str]] = None) -> None:
+    apply_import_plan(prepare_import_plan(target, destination, baseline))
 
 def find_manifest_mapping(last_manifest: Dict[str, Any], mapping_name: str) -> Optional[Dict[str, Any]]:
     for item in last_manifest.get("mappings", []):
@@ -520,44 +670,90 @@ def import_from_target(
     last_manifest: Optional[Dict[str, Any]],
     preview_lines: int,
     preview_only: bool,
+    collected_plans: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[Path]:
     if not last_manifest:
         raise DeployError("No deployment manifest found for '{0}'. Import requires a prior deploy.".format(target_name))
-    if last_manifest.get("mode") == "link":
-        print(
-            "  no-op   : mapping '{0}' was last deployed via link; edits already land in the repository".format(
-                mapping_name
-            )
-        )
-        return None
-    if not target.exists():
-        raise DeployError("Target path does not exist: {0}".format(target))
-
     manifest_mapping = find_manifest_mapping(last_manifest, mapping_name)
     if not manifest_mapping:
         raise DeployError(
             "No manifest entry found for mapping '{0}' in target '{1}'.".format(mapping_name, target_name)
         )
 
+    if normalized_path(target) != normalized_path(Path(manifest_mapping["target_path"])):
+        raise DeployError("Deployment target identity changed; refusing import for {0}.".format(mapping_name))
+    canonical = Path(manifest_mapping["canonical_source"])
+    mode = manifest_mapping.get("actual_mode", last_manifest.get("mode"))
+    if mode == "link":
+        if target.exists() and canonical.exists() and os.path.samefile(str(target), str(canonical)):
+            print("  no-op   : mapping '{0}' still links to the canonical source".format(mapping_name))
+            return None
+        raise DeployError("Linked mapping no longer shares its source; save target edits and redeploy: {0}".format(target))
     destination = Path(manifest_mapping["import_destination"])
-    identical = preview_import(destination, target, preview_lines)
-    if identical or preview_only:
+    expected = import_review_path(target_name, mapping_name, canonical) if mode == "render" else canonical
+    if normalized_path(destination) != normalized_path(expected):
+        raise DeployError("Import destination identity does not match deployment mode.")
+    if not target.exists():
+        raise DeployError("Target path does not exist: {0}".format(target))
+    roots = manifest_mapping.get("import_roots")
+    if normalized_path(canonical) == normalized_path(CORE_ROOT) and mode == "copy":
+        if roots is None:
+            raise DeployError("Core copy manifest lacks subtree baselines; save target edits and redeploy.")
+        plans = []
+        for root in roots:
+            relative = root["relative"]
+            if relative not in ("knowledge", "profiles"):
+                raise DeployError("Core bundle import contains a forbidden subtree.")
+            plans.append(prepare_import_plan(target / relative, CORE_ROOT / relative, root.get("baseline")))
+    else:
+        baseline = manifest_mapping.get("review_baseline") if mode == "render" else manifest_mapping.get("baseline")
+        plans = [prepare_import_plan(target, destination, baseline)]
+    for plan in plans:
+        print("  preview : {0} changed entries -> {1}".format(len(plan["changes"]), plan["destination"]))
+    if collected_plans is not None:
+        collected_plans.extend(plans)
+    if preview_only:
         return destination
-
-    copy_into_destination(target, destination)
+    for plan in plans:
+        apply_import_plan(plan)
+    if roots is not None and mode == "copy":
+        for root, plan in zip(roots, plans):
+            root["baseline"] = plan["incoming"]
+    else:
+        manifest_mapping["baseline"] = plans[0]["incoming"]
+        if mode == "render":
+            manifest_mapping["review_baseline"] = plans[0]["incoming"]
     print("  imported: {0} -> {1}".format(target, destination))
     return destination
 
-def manifest_key(target_name: str, scope: str) -> str:
-    return "{0}@{1}".format(target_name, scope) if scope == "project" else target_name
+def validate_shared_changes(plans: List[Dict[str, Any]]) -> None:
+    """整包和薄入口可能指向同一真源，先拒绝互相矛盾的副本改动。"""
+    changes: Dict[str, Optional[str]] = {}
+    for plan in plans:
+        for name, signature in plan["changes"].items():
+            path = normalized_path(plan["destination"] / name if name else plan["destination"])
+            if path in changes and changes[path] != signature:
+                raise DeployError("Import conflict between deployed copies at {0}".format(path))
+            changes[path] = signature
+    for path, signature in changes.items():
+        if signature != "directory" and any(path != child and value is not None and Path(path) in Path(child).parents for child, value in changes.items()):
+            raise DeployError("Import conflict between parent and child mappings at {0}".format(path))
+
+def manifest_key(target_name: str, scope: str, project_root: Optional[Path] = None) -> str:
+    if scope != "project":
+        return target_name
+    if project_root is None:
+        raise DeployError("Project deployment manifest requires a project root.")
+    digest = hashlib.sha256(normalized_path(project_root).encode("utf-8")).hexdigest()[:16]
+    return "{0}@project-{1}".format(target_name, digest)
 
 def resolve_project_root(raw: Optional[str]) -> Path:
     if raw:
-        return Path(os.path.abspath(os.path.expandvars(os.path.expanduser(raw))))
-    return Path(os.path.abspath(os.getcwd()))
+        return Path(os.path.expandvars(os.path.expanduser(raw))).resolve()
+    return Path.cwd().resolve()
 
 def show_status(target_name: str, spec: DeploySpec, scope: str = "user", project_root: Optional[Path] = None) -> None:
-    mkey = manifest_key(target_name, scope)
+    mkey = manifest_key(target_name, scope, project_root)
     last_manifest = read_manifest(mkey)
     print()
     print("[{0}] scope={1}".format(target_name, scope))
@@ -635,9 +831,11 @@ def _check_deps_for_deploy(install: bool) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
-    ensure_generated_layout()
+    dry_run = bool(getattr(args, "dry_run", False)) or (args.action == "deploy" and bool(args.preview_only))
+    if not dry_run and args.action != "status" and not args.preview_only:
+        ensure_generated_layout()
     # 部署前依赖检测（仅 deploy 动作；status/import 不检）
-    if getattr(args, "action", "") == "deploy":
+    if getattr(args, "action", "") == "deploy" and not dry_run:
         _check_deps_for_deploy(install=bool(getattr(args, "install_deps", False)))
     scope = getattr(args, "scope", "user") or "user"
     project_root = resolve_project_root(getattr(args, "project_root", None)) if scope == "project" else None
@@ -645,21 +843,29 @@ def run(args: argparse.Namespace) -> int:
 
     for target_name in args.targets:
         if target_name not in config:
-            print(
-                "Unknown target '{0}'. Add it to config/deploy.defaults.json or config/deploy.local.json.".format(
-                    target_name
-                ),
-                file=sys.stderr,
-            )
-            continue
+            raise DeployError("Unknown deployment target: {0}".format(target_name))
 
         spec = config[target_name]
         if args.action == "status":
             show_status(target_name, spec, scope=scope, project_root=project_root)
             continue
 
-        mkey = manifest_key(target_name, scope)
+        mkey = manifest_key(target_name, scope, project_root)
         last_manifest = read_manifest(mkey)
+        if args.action == "import" and last_manifest:
+            expected_root = normalized_path(project_root) if project_root else None
+            if (last_manifest.get("target") != mkey or last_manifest.get("scope", "user") != scope
+                    or last_manifest.get("project_root") != expected_root or last_manifest.get("profile") != spec.profile):
+                raise DeployError("Deployment manifest identity does not match this target/project.")
+            # 先检查所有映射，避免发现后续冲突之前已经改动前面的真源。
+            preflight_plans: List[Dict[str, Any]] = []
+            for mapping in spec.mappings:
+                item = find_manifest_mapping(last_manifest, mapping.name)
+                if item is None or normalized_path(Path(item["canonical_source"])) != normalized_path(resolve_core_source(mapping.source)):
+                    raise DeployError("Canonical mapping changed; save target edits and redeploy.")
+                import_from_target(expand_target_path(mapping.target, project_root), mapping.name, mkey,
+                                   last_manifest, args.preview_lines, True, preflight_plans)
+            validate_shared_changes(preflight_plans)
         effective_mode = args.mode
         if args.action == "import" and last_manifest and last_manifest.get("mode"):
             effective_mode = str(last_manifest.get("mode"))
@@ -681,12 +887,21 @@ def run(args: argparse.Namespace) -> int:
             print("    source: {0}".format(canonical_source))
             print("    target: {0}".format(target))
 
+            if dry_run:
+                if not canonical_source.exists():
+                    raise DeployError("Deployment source does not exist: {0}".format(canonical_source))
+                print("    dry_run: would deploy via {0}; no files changed".format(args.mode))
+                continue
+
             if args.action == "deploy":
+                if not canonical_source.exists():
+                    raise DeployError("Deployment source does not exist: {0}".format(canonical_source))
                 deployed_source = canonical_source
                 import_destination = canonical_source
+                actual_mode = args.mode
 
                 if args.mode == "link":
-                    link_deployment(canonical_source, target, backup=args.backup)
+                    actual_mode = link_deployment(canonical_source, target, backup=args.backup)
                 elif args.mode == "copy":
                     copy_deployment(canonical_source, target, backup=args.backup)
                 elif args.mode == "render":
@@ -696,15 +911,20 @@ def run(args: argparse.Namespace) -> int:
                     print("    import_review  : {0}".format(import_destination))
                     copy_deployment(deployed_source, target, backup=args.backup)
 
-                operations.append(
-                    {
+                operation = {
                         "name": mapping.name,
                         "canonical_source": str(canonical_source),
                         "deployed_source": str(deployed_source),
                         "target_path": str(target),
                         "import_destination": str(import_destination),
+                        "actual_mode": actual_mode,
                     }
-                )
+                if actual_mode != "link":
+                    if actual_mode == "copy" and normalized_path(canonical_source) == normalized_path(CORE_ROOT):
+                        operation["import_roots"] = [{"relative": name, "baseline": snapshot_path(target / name)} for name in ("knowledge", "profiles")]
+                    else:
+                        operation["baseline"] = snapshot_path(target)
+                operations.append(operation)
                 continue
 
             if args.action == "import":
@@ -716,22 +936,14 @@ def run(args: argparse.Namespace) -> int:
                     preview_lines=args.preview_lines,
                     preview_only=args.preview_only,
                 )
-                operations.append(
-                    {
-                        "name": mapping.name,
-                        "canonical_source": str(canonical_source),
-                        "deployed_source": str(canonical_source),
-                        "target_path": str(target),
-                        "import_destination": str(destination) if destination else "",
-                    }
-                )
+                operations.append(dict(find_manifest_mapping(last_manifest, mapping.name)))
 
-        if args.action == "deploy":
-            write_manifest(mkey, spec, args.action, args.mode, operations)
-        elif args.action == "import":
+        if args.action == "deploy" and not dry_run:
+            write_manifest(mkey, spec, args.action, args.mode, operations, scope, project_root)
+        elif args.action == "import" and not args.preview_only and not dry_run:
             last_mode = last_manifest["mode"] if last_manifest else args.mode
             effective_action = "import-preview" if args.preview_only else args.action
-            write_manifest(mkey, spec, effective_action, last_mode, operations)
+            write_manifest(mkey, spec, effective_action, last_mode, operations, scope, project_root)
 
     return 0
 
@@ -744,6 +956,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--targets", nargs="+", default=["cursor"])
     parser.add_argument("--preview-lines", type=int, default=40)
     parser.add_argument("--preview-only", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="只预览，不部署、备份、写清单或安装依赖")
     parser.add_argument("--backup", action="store_true", help="覆盖前把旧目标备份到 yggforge-runtime/deploy-backups/<ts>/")
     parser.add_argument("--install-deps", action="store_true", help="部署前自动检测并补装缺失依赖（经 behavior 门禁 deps.install）")
     return parser

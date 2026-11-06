@@ -7,6 +7,7 @@ channel/tag 规范化集成；不直接读 CLI argv。
 """
 
 import re
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -34,12 +35,15 @@ class FileMemoryBackend(object):
         self.rules_root = self.core_root / "knowledge" / "rules"
         self.templates_root = self.core_root / "knowledge" / "templates"
         self.decisions_root = self.core_root / "knowledge" / "decisions"
+        self.reference_root = self.core_root / "knowledge" / "reference"
         self.distilled_sources_root = self.core_root / "knowledge" / "sources" / "distilled"
         self.default_search_limit = int(config.get("search", {}).get("default_limit", 5))
         self.type_priority = dict(config.get("search", {}).get("type_priority", {}))
         # 兼容旧键名 kind_priority（已废弃，仍可读）
         if not self.type_priority:
             self.type_priority = dict(config.get("search", {}).get("kind_priority", {}))
+        self.type_priority.setdefault("reference", 18)
+        self.type_priority.update(config.get("search", {}).get("runtime_priority", {}))
         self.search_roots = [
             (self.raw_root, "raw"),
             (self.lessons_inbox_root, "lesson-draft"),
@@ -47,6 +51,7 @@ class FileMemoryBackend(object):
             (self.rules_root, "rule"),
             (self.templates_root, "template"),
             (self.decisions_root, "decision"),
+            (self.reference_root, "reference"),
             (self.distilled_sources_root, "distilled-source"),
         ]
 
@@ -101,7 +106,7 @@ class FileMemoryBackend(object):
             tag_lines = "  []"
         refined_line = ""
         if title_refined:
-            refined_line = 'title_refined: "{0}"\n'.format(title_refined.replace('"', '\\"'))
+            refined_line = 'title_refined: {0}\n'.format(json.dumps(title_refined, ensure_ascii=False))
         return """---
 title: "{title}"
 {refined}type: observation
@@ -121,13 +126,13 @@ tags:
 
 {body}
 """.format(
-            title=title.replace('"', '\\"'),
+            title=json.dumps(title, ensure_ascii=False)[1:-1],
             refined=refined_line,
-            channel=(channel or "").replace('"', '\\"'),
-            source=source.replace('"', '\\"'),
-            scope=scope.replace('"', '\\"'),
+            channel=json.dumps(channel or "", ensure_ascii=False)[1:-1],
+            source=json.dumps(source, ensure_ascii=False)[1:-1],
+            scope=json.dumps(scope, ensure_ascii=False)[1:-1],
             recorded_at=recorded_at,
-            lesson_draft_path=lesson_draft_path.replace('"', '\\"'),
+            lesson_draft_path=json.dumps(lesson_draft_path, ensure_ascii=False)[1:-1],
             tag_lines=tag_lines,
             body=body,
         )
@@ -149,7 +154,7 @@ tags:
             tag_lines = "  []"
         refined_line = ""
         if title_refined:
-            refined_line = 'title_refined: "{0}"\n'.format(title_refined.replace('"', '\\"'))
+            refined_line = 'title_refined: {0}\n'.format(json.dumps(title_refined, ensure_ascii=False))
         return """---
 title: "{title}"
 {refined}type: lesson
@@ -175,11 +180,11 @@ when_to_read: []
 
 - TODO
 """.format(
-            title=title.replace('"', '\\"'),
+            title=json.dumps(title, ensure_ascii=False)[1:-1],
             refined=refined_line,
-            channel=(channel or "").replace('"', '\\"'),
-            source=source.replace('"', '\\"'),
-            scope=scope.replace('"', '\\"'),
+            channel=json.dumps(channel or "", ensure_ascii=False)[1:-1],
+            source=json.dumps(source, ensure_ascii=False)[1:-1],
+            scope=json.dumps(scope, ensure_ascii=False)[1:-1],
             recorded_at=recorded_at,
             tag_lines=tag_lines,
             body=body,
@@ -338,8 +343,9 @@ when_to_read: []
                 tag_meta = {"status": "error", "error": str(exc)}
                 normalized_tags = [str(t).strip().lower() for t in tags if str(t).strip()]
 
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        recorded_at = datetime.now().strftime("%Y-%m-%d")
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d-%H%M%S-%f")
+        recorded_at = now.strftime("%Y-%m-%d")
         filename = "{0}-{1}.md".format(timestamp, self.slugify(slug_source)[:80])
 
         self.raw_root.mkdir(parents=True, exist_ok=True)
@@ -464,6 +470,7 @@ when_to_read: []
         scope: Optional[str] = None,
         agents: Optional[List[str]] = None,
         channels: Optional[List[str]] = None,
+        include_inactive: bool = False,
     ) -> List[Dict[str, str]]:
         query_text = (query or "").strip().lower()
         has_filters = bool(
@@ -476,13 +483,22 @@ when_to_read: []
         if not query_text and not has_filters:
             return []
 
-        effective_limit = limit or self.default_search_limit
+        effective_limit = self.default_search_limit if limit is None else limit
+        if effective_limit < 0:
+            raise ValueError("recall limit 不能为负数")
+        if effective_limit == 0:
+            return []
         results: List[Dict[str, str]] = []
+        seen_paths = set()
 
         for root, kind in self.search_roots:
             if not root.exists():
                 continue
             for path in root.rglob("*.md"):
+                resolved = path.resolve()
+                if resolved in seen_paths:
+                    continue
+                seen_paths.add(resolved)
                 if path.name == "README.md":
                     continue
                 # Skip template placeholders under knowledge/templates.
@@ -490,8 +506,12 @@ when_to_read: []
                     continue
                 text = path.read_text(encoding="utf-8-sig")
                 metadata, body = self.parse_front_matter(text)
+                entry_kind = str(metadata.get("type") or kind).strip().lower()
+                status = str(metadata.get("status", "")).strip().lower()
+                if entry_kind == "rule" and status != "active" and not include_inactive:
+                    continue
                 if not self.matches_filters(
-                    kind=kind,
+                    kind=entry_kind,
                     metadata=metadata,
                     kinds=kinds,
                     tags=tags,
@@ -518,7 +538,7 @@ when_to_read: []
                     ):
                         continue
 
-                score = self.score_entry(kind, metadata, body, query_text)
+                score = self.score_entry(entry_kind, metadata, body, query_text)
                 if not query_text:
                     priority = str(metadata.get("priority", "")).lower()
                     score += {"high": 12, "medium": 6, "low": 2}.get(priority, 0)
@@ -541,6 +561,9 @@ when_to_read: []
                 results.append(
                     {
                         "type": str(metadata.get("type") or kind),
+                        "status": status,
+                        "confidence": str(metadata.get("confidence", "")),
+                        "last_reviewed": str(metadata.get("last_reviewed", "")),
                         "path": str(path),
                         "title": title,
                         "score": str(score),

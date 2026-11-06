@@ -14,7 +14,79 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def _without_comment(text: str) -> str:
+    """只移除引号外、由空白引出的 YAML 行尾注释。"""
+    quote = ""
+    escaped = False
+    for idx, char in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if quote == '"' and char == "\\":
+            escaped = True
+            continue
+        if char in ('"', "'"):
+            if not quote:
+                quote = char
+            elif quote == char:
+                quote = ""
+        elif char == "#" and not quote and (idx == 0 or text[idx - 1].isspace()):
+            return text[:idx].rstrip()
+    return text.strip()
+
+
+def _parse_value(text: str) -> Any:
+    """解析标量与行内列表，不依赖 PyYAML。"""
+    value = _without_comment(text.strip())
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1].strip()
+        if not inner:
+            return []
+        parts: List[str] = []
+        start = 0
+        quote = ""
+        escaped = False
+        depth = 0
+        for idx, char in enumerate(inner):
+            if escaped:
+                escaped = False
+                continue
+            if quote == '"' and char == "\\":
+                escaped = True
+                continue
+            if char in ('"', "'"):
+                if not quote:
+                    quote = char
+                elif quote == char:
+                    quote = ""
+            elif not quote:
+                if char in "[{":
+                    depth += 1
+                elif char in "]}":
+                    depth -= 1
+                elif char == "," and depth == 0:
+                    parts.append(inner[start:idx])
+                    start = idx + 1
+        if quote or depth != 0:
+            raise ValueError("无效 YAML 行内列表: {0}".format(value))
+        parts.append(inner[start:])
+        return [_parse_value(part) for part in parts if part.strip()]
+    if value.startswith('"') and value.endswith('"'):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value[1:-1].replace('\\"', '"')
+    if value.startswith("'") and value.endswith("'"):
+        return value[1:-1].replace("''", "'")
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    if value in ("{}", "null", "~"):
+        return []
+    return value
 
 
 def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str]:
@@ -24,6 +96,7 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str]:
     不依赖 PyYAML，与历史 graph_scan / file_backend 行为对齐。
     无 front matter 时返回 ``({}, text)``。
     """
+    text = text.lstrip("\ufeff").replace("\r\n", "\n")
     if not text.startswith("---\n"):
         return {}, text
     end = text.find("\n---\n", 4)
@@ -34,18 +107,16 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str]:
     for raw_line in text[4:end].splitlines():
         line = raw_line.rstrip()
         stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
         if not stripped:
             current_list_key = None
             continue
         if line.startswith("  - ") or line.startswith("- "):
-            item = stripped[2:].strip().strip('"').strip("'")
+            item = _parse_value(stripped[2:])
             if current_list_key:
                 metadata.setdefault(current_list_key, [])
-                # 布尔字面量
-                if item.lower() in ("true", "false"):
-                    metadata[current_list_key].append(item.lower() == "true")
-                else:
-                    metadata[current_list_key].append(item)
+                metadata[current_list_key].append(item)
             continue
         if ":" not in line:
             current_list_key = None
@@ -57,16 +128,7 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str]:
             metadata[key] = []
             current_list_key = key
             continue
-        # 行内空列表
-        if value in ("[]", "{}", "null", "~"):
-            metadata[key] = []
-            current_list_key = None
-            continue
-        scalar = value.strip('"').strip("'")
-        if scalar.lower() in ("true", "false"):
-            metadata[key] = scalar.lower() == "true"
-        else:
-            metadata[key] = scalar
+        metadata[key] = _parse_value(value)
         current_list_key = None
     body = text[end + 5 :]
     return metadata, body
@@ -77,6 +139,7 @@ def split_front_matter_lines(text: str) -> Tuple[Optional[List[str]], str]:
 
     无 front matter 时返回 ``(None, text)``。
     """
+    text = text.lstrip("\ufeff").replace("\r\n", "\n")
     if not text.startswith("---\n"):
         return None, text
     end = text.find("\n---\n", 4)
@@ -123,13 +186,13 @@ def dump_front_matter_lines(metadata: Dict[str, Any]) -> List[str]:
                         lines.append("  - {0}".format("true" if item else "false"))
                     else:
                         text = str(item)
-                        if any(c in text for c in (":", "#", '"')):
-                            text = '"{0}"'.format(text.replace('"', '\\"'))
+                        if any(c in text for c in (":", "#", '"', "\\", "\n", ",", "[", "]")) or text.lower() in ("true", "false", "null", "~"):
+                            text = json.dumps(text, ensure_ascii=False)
                         lines.append("  - {0}".format(text))
         else:
             text = str(value)
-            if any(c in text for c in (":", "#", '"', "\n")) or text == "":
-                text = '"{0}"'.format(text.replace('"', '\\"'))
+            if any(c in text for c in (":", "#", '"', "\n", "\\", "[", "]")) or text == "" or text.lower() in ("true", "false", "null", "~"):
+                text = json.dumps(text, ensure_ascii=False)
             lines.append("{0}: {1}".format(key, text))
     return lines
 

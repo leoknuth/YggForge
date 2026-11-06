@@ -9,7 +9,7 @@ source: user
 scope: cross-project
 channel: local
 recorded_at: 2026-07-23
-last_reviewed: 2026-07-23
+last_reviewed: 2026-11-06
 tags:
   - ygg
   - trigger
@@ -33,9 +33,9 @@ project_to:
 
 `beforeSubmitPrompt` 是 YggForge 的 **bootstrap 根钩子**：在每条用户消息提交前
 由 Cursor 自动运行 `scripts/hooks/trigger_detector.py`，把检测结果
-（`should_trigger` + `action`）落盘到 `yggforge-runtime/cache/last_trigger.json`。
+（`should_trigger` + `action`）按会话/消息身份原子保存到 `yggforge-runtime/cache/triggers/`，附带UTC时间与本轮原文摘要。
 
-agent 回答前必须先 Read 该文件并按 `action` 路由（见 `yggforge` 技能）。
+agent 回答前按 `yggforge` 技能调用核心包内绝对路径的 `ygg_pre_submit.py --read-trigger`，核对会话、消息/原文及 5 分钟时效；只有 `validation=matched` 才可按 `action` 路由。不消费旧全局 `cache/last_trigger.json`。
 
 ## 安装
 
@@ -49,7 +49,7 @@ agent 回答前必须先 Read 该文件并按 `action` 路由（见 `yggforge` �
 - **不与外部 Agent 自身 hooks 冲突**：YggForge 内部 hooks 体系独立；
   对外只暴露这一个根钩子作为入口。
 - **fail open**：检测步骤已硬性下沉到钩子；agent 不得凭自身判断跳过检测，
-  但读不到 `last_trigger.json` 时跳过 ygg 检索并继续作答。
+  但缓存缺失、过期、匹配失败或宿主无会话 ID 时，不沿用旧动作，按本轮消息重新检测或内化 AGENTS.md 规则继续作答；已有显式授权无需再次确认。
 
 ## 相关
 

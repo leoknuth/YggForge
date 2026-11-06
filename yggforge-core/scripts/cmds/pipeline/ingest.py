@@ -19,6 +19,7 @@ import html
 import json
 import re
 from datetime import datetime
+from html.parser import HTMLParser
 from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -34,6 +35,9 @@ class IngestError(RuntimeError):
     pass
 
 def fetch_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise IngestError("Only HTTP(S) source URLs are supported.")
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -46,7 +50,14 @@ def fetch_url(url: str) -> str:
     request = Request(url, headers=headers)
     try:
         with urlopen(request, timeout=20) as response:
-            return response.read().decode("utf-8", errors="replace")
+            data = response.read(4 * 1024 * 1024 + 1)
+            if len(data) > 4 * 1024 * 1024:
+                raise IngestError("Source exceeds the 4 MiB input limit.")
+            charset = response.headers.get_content_charset() or "utf-8"
+            try:
+                return data.decode(charset, errors="replace")
+            except LookupError:
+                return data.decode("utf-8", errors="replace")
     except HTTPError as exc:
         raise IngestError("HTTP {0} fetching {1}".format(exc.code, url)) from exc
     except URLError as exc:
@@ -110,10 +121,53 @@ def extract_wechat(url: str, raw_html: str) -> dict:
     }
 
 def detect_source_type(url: str) -> str:
-    host = urlparse(url).netloc.lower()
-    if "mp.weixin.qq.com" in host:
+    host = (urlparse(url).hostname or "").lower()
+    if host == "mp.weixin.qq.com":
         return "wechat"
+    if host in ("github.com", "raw.githubusercontent.com"):
+        return "github"
     return "generic"
+
+class PageTextExtractor(HTMLParser):
+    """提取静态页面正文，忽略脚本、样式和导航。"""
+
+    IGNORED_TAGS = {"script", "style", "nav", "header", "footer"}
+    BLOCK_TAGS = {"p", "div", "section", "li", "br", "tr", "pre", "h1", "h2", "h3", "h4"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.chunks = []
+        self.ignored = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.IGNORED_TAGS:
+            self.ignored.append(tag)
+        if not self.ignored and tag in self.BLOCK_TAGS:
+            self.chunks.append("\n")
+
+    def handle_endtag(self, tag):
+        if self.ignored:
+            if tag == self.ignored[-1]:
+                self.ignored.pop()
+            return
+        if tag in self.BLOCK_TAGS:
+            self.chunks.append("\n")
+
+    def handle_data(self, data):
+        if not self.ignored:
+            self.chunks.append(data)
+
+def resolve_fetch_url(url: str) -> str:
+    """GitHub 仓库和 blob 链接读取原始 Markdown，出处仍保留原 URL。"""
+    parsed = urlparse(url)
+    if parsed.hostname != "github.com":
+        return url
+    parts = parsed.path.strip("/").split("/")
+    if len(parts) == 2:
+        return "https://raw.githubusercontent.com/{0}/{1}/HEAD/README.md".format(parts[0], parts[1][:-4] if parts[1].endswith(".git") else parts[1])
+    if len(parts) >= 5 and parts[2] == "blob":
+        return "https://raw.githubusercontent.com/" + "/".join(parts[:2] + parts[3:])
+    return url
 
 def extract_content(url: str, raw_html: str) -> dict:
     source_type = detect_source_type(url)
@@ -121,7 +175,23 @@ def extract_content(url: str, raw_html: str) -> dict:
         data = extract_wechat(url, raw_html)
         data["source_type"] = source_type
         return data
-    raise IngestError("Unsupported source type for URL: {0}".format(url))
+    looks_html = bool(re.search(r"<(?:html|body|article|main|!doctype)\b", raw_html, re.I))
+    if source_type == "github" and urlparse(resolve_fetch_url(url)).hostname == "raw.githubusercontent.com":
+        looks_html = False
+    if looks_html:
+        title = re.sub(r"<[^>]+>", "", first_group(r"<title[^>]*>(.*?)</title>", raw_html))
+        main = re.search(r"<(article|main)\b[^>]*>(.*?)</\1>", raw_html, re.I | re.S)
+        parser = PageTextExtractor()
+        parser.feed(main.group(2) if main else raw_html)
+        text = re.sub(r"[ \t\xa0]+", " ", "".join(parser.chunks))
+        text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
+    else:
+        text = raw_html.strip()
+        heading = re.search(r"^#{1,6}\s+(.+)$", text, re.M)
+        title = heading.group(1).strip() if heading else next(iter(text.splitlines()), "")[:120]
+    if not text:
+        raise IngestError("The source contains no extractable text.")
+    return {"url": url, "title": title or "Untitled Source", "author": "unknown", "publish_time": "unknown", "text": text, "images": [], "content_html": raw_html, "source_type": source_type}
 
 def write_file(path: Path, content: str, encoding: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,26 +209,26 @@ def render_inbox_markdown(entry_id: str, extracted: dict, text_asset_path: Path,
     if raw_html_path is not None:
         raw_html_rel = raw_html_path.relative_to(CONTENT_ROOT).as_posix()
 
-    title = (extracted["title"] or "Untitled Source").replace('"', '\\"')
-    url = extracted["url"].replace('"', '\\"')
-    author = (extracted["author"] or "unknown").replace('"', '\\"')
+    title = extracted["title"] or "Untitled Source"
+    url = extracted["url"]
+    author = extracted["author"] or "unknown"
     publish_time = extracted["publish_time"] or "unknown"
 
     raw_html_line = ""
     if raw_html_rel:
-        raw_html_line = 'raw_html_path: {0}\n'.format(raw_html_rel)
+        raw_html_line = 'raw_html_path: {0}\n'.format(json.dumps(raw_html_rel, ensure_ascii=False))
 
     return """---
 id: {entry_id}
-title: "{title}"
+title: {title_yaml}
 type: source
 status: draft
 confidence: medium
-source: "{url}"
-source_url: "{url}"
-author: "{author}"
-published_at: "{publish_time}"
-asset_path: {asset_path}
+source: {url_yaml}
+source_url: {url_yaml}
+author: {author_yaml}
+published_at: {publish_time_yaml}
+asset_path: {asset_path_yaml}
 {raw_html_line}last_reviewed: {today}
 owners:
   - team
@@ -179,10 +249,15 @@ image_urls:
 """.format(
         entry_id=entry_id,
         title=title,
+        title_yaml=json.dumps(title, ensure_ascii=False),
         url=url,
+        url_yaml=json.dumps(url, ensure_ascii=False),
         author=author,
+        author_yaml=json.dumps(author, ensure_ascii=False),
         publish_time=publish_time,
+        publish_time_yaml=json.dumps(publish_time, ensure_ascii=False),
         asset_path=asset_path,
+        asset_path_yaml=json.dumps(asset_path, ensure_ascii=False),
         raw_html_line=raw_html_line,
         today=datetime.now().strftime("%Y-%m-%d"),
         image_yaml=image_yaml,
@@ -197,10 +272,12 @@ def slugify(text: str) -> str:
     return text or "source"
 
 def ingest_url(url: str, slug: str, save_raw_html: bool) -> dict:
-    raw_html = fetch_url(url)
+    raw_html = fetch_url(resolve_fetch_url(url))
     extracted = extract_content(url, raw_html)
 
-    base_name = "{0}-{1}".format(datetime.now().strftime("%Y-%m-%d"), slug)
+    base_name = "{0}-{1}".format(datetime.now().strftime("%Y-%m-%d"), slugify(slug))
+    if (INBOX_ROOT / (base_name + ".md")).exists():
+        base_name += "-" + datetime.now().strftime("%H%M%S%f")
     text_asset_path = ASSET_ROOT / (base_name + ".txt")
     raw_html_path = ASSET_ROOT / (base_name + ".html") if save_raw_html else None
     md_path = INBOX_ROOT / (base_name + ".md")

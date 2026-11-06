@@ -9,7 +9,7 @@ source: docs/reference/triggers.md
 scope: cross-project
 channel: local
 recorded_at: 2026-07-23
-last_reviewed: 2026-07-23
+last_reviewed: 2026-11-06
 tags:
   - ygg
   - trigger
@@ -30,9 +30,9 @@ projection:
 
 ## Rule
 
-- 检测与路由步骤由 Cursor hooks **硬性执行**，agent 不得凭自身判断跳过。
-- `beforeSubmitPrompt`（`ygg_pre_submit.py`）在每条用户消息提交前跑 `trigger_detector`，结果写入 `yggforge-runtime/cache/last_trigger.json`。
-- `sessionStart`（`ygg_session_protocol.py`）注入完整路由协议；回答前必读 `last_trigger.json` 并按 `action` 路由。
+- 有 hooks 的环境使用与本轮会话、消息匹配且未过期的检测结果；不复用旧消息或其他会话的结果。
+- `beforeSubmitPrompt` 在消息提交前检测意图，按会话与消息隔离保存；回答前通过验证入口核对身份、原文摘要与时效。共享的 `last_trigger.json` 不作为可信路由输入。
+- `sessionStart` 提供路由引导；注入是否成功不替代检测结果验证。无 hook 或无法获得匹配身份时，按本轮 AGENTS 约定判断或重新检测，不猜测缓存所属消息。
 - 开关：`behavior.defaults.yaml` / `behavior.local.yaml` 的 `features.default_trigger_on_chat`（部署默认 `true`）。
 - 是否真正执行各命令由对应 behavior 门禁（ask/allow/deny）决定。
 - 与综合回答策略并行：见 `standing-preference.md` / `ygg-answer-synthesis.mdc`。

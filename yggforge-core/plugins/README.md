@@ -73,7 +73,7 @@ related:
 - 介绍技能：`plugins/skills/caracal-intro.md`（`type: skill`，规定输出格式）
 - 触发规则：`plugins/rules/caracal-easter-egg.md`（`type: rule`，定义触发条件）
 
-三者共享 `caracal` tag。当用户问及狞猫时，模型除正常回答外，会追加规定格式的彩蛋介绍并明确声明触发。这是内置测试，也是 YggForge 联想记忆能力的端到端示范。
+三者共享 `caracal` tag。当用户问及狞猫时，模型除正常回答外，会追加彩蛋介绍并明确声明触发；宿主可显示图片时优先 PNG/SVG，不支持时读取原字符画兜底。这是内置测试，也是 YggForge 联想记忆能力的端到端示范。
 
 ## 内置流程：三庭合议（ICJ）
 

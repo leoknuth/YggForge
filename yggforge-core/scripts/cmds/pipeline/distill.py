@@ -80,7 +80,11 @@ def first_heading(body: str) -> str:
     return match.group(1).strip() if match else ""
 
 def choose_input_path(value: Optional[str], latest: bool) -> Path:
-    inbox_files = sorted(INBOX_ROOT.glob("*.md"))
+    inbox_files = [
+        path for path in INBOX_ROOT.glob("*.md")
+        if path.name.lower() != "readme.md" and not path.name.endswith(".template.md")
+    ]
+    inbox_files.sort(key=lambda path: (path.stat().st_mtime_ns, path.name))
     if latest:
         if not inbox_files:
             raise DistillError("No inbox Markdown entries found.")
@@ -211,9 +215,7 @@ def render_distilled(entry: Dict[str, str], slug: str, entry_id: str) -> str:
             return "  - {0}".format(empty)
         lines = []
         for item in items:
-            text = item.strip()
-            if any(c in text for c in (":", "#", '"')):
-                text = '"{0}"'.format(text.replace('"', '\\"'))
+            text = json.dumps(item.strip(), ensure_ascii=False)
             lines.append("  - {0}".format(text))
         return "\n".join(lines)
 
@@ -223,14 +225,14 @@ def render_distilled(entry: Dict[str, str], slug: str, entry_id: str) -> str:
 
     return """---
 id: {entry_id}
-title: "{title}"
+title: {title_yaml}
 type: distilled-source
 status: draft
 confidence: medium
-source: "{source}"
-source_url: "{source}"
-author: "{author}"
-inbox_path: {inbox_rel}
+source: {source_yaml}
+source_url: {source_yaml}
+author: {author_yaml}
+inbox_path: {inbox_rel_yaml}
 last_reviewed: {today}
 owners:
   - team
@@ -255,11 +257,13 @@ promote_rationale: ""
 （结构化字段已在 YAML；此处仅保留标题。人工校对后可补充说明。）
 """.format(
         entry_id=entry_id,
-        title=title.replace('"', '\\"'),
-        source=source.replace('"', '\\"'),
-        author=(author or "").replace('"', '\\"'),
+        title=title,
+        title_yaml=json.dumps(title, ensure_ascii=False),
+        source_yaml=json.dumps(source, ensure_ascii=False),
+        author_yaml=json.dumps(author, ensure_ascii=False),
         tag_lines=tag_lines,
         inbox_rel=inbox_rel,
+        inbox_rel_yaml=json.dumps(inbox_rel, ensure_ascii=False),
         today=datetime.now().strftime("%Y-%m-%d"),
         fact_yaml=yaml_list(fact_items),
         practice_yaml=yaml_list(conclusions),
@@ -269,8 +273,11 @@ def distill(input_path: Path, slug: Optional[str]) -> Dict[str, str]:
     from knowledge.knowledge_id import generate_knowledge_id
 
     entry = load_inbox_entry(input_path)
-    derived_slug = slug or slugify(re.sub(r"^\d{4}-\d{2}-\d{2}-", "", Path(entry["path"]).stem))
+    derived_slug = slugify(slug or re.sub(r"^\d{4}-\d{2}-\d{2}-", "", Path(entry["path"]).stem))
+    DISTILLED_ROOT.mkdir(parents=True, exist_ok=True)
     output_path = DISTILLED_ROOT / ("{0}-{1}.md".format(datetime.now().strftime("%Y-%m-%d"), derived_slug))
+    if output_path.exists():
+        output_path = output_path.with_name(output_path.stem + "-" + datetime.now().strftime("%H%M%S%f") + ".md")
     entry_id = generate_knowledge_id(output_path, entry["title"])
     content = render_distilled(entry, derived_slug, entry_id=entry_id)
     output_path.write_text(content, encoding="utf-8-sig")

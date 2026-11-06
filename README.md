@@ -11,6 +11,7 @@
 - [记忆与标签（心智模型）](#记忆与标签心智模型)
 - [工作原理（端到端）](#工作原理端到端)
 - [快速开始](#快速开始)
+- [开发验证](#开发验证)
 - [文档地图](#文档地图)
 - [License](#license)
 
@@ -63,7 +64,7 @@ YggForge 的选择：
 
 上面的原则表讲的是"做什么"，这里讲几句"为什么这么选"——这些选择是有意对抗主流方案的：
 
-**为什么用文本（Markdown + YAML）存知识，而不是向量库？** 因为知识的寿命应该长于创造它的工具。向量库的 embedding 3-5 年随模型迭代就失效了，数据库格式会随版本迁移损坏，而纯文本 30 年后任何编辑器都能打开。更重要的是，强规范必须人审——人没法 review 一个 1536 维的浮点数组，所以"人审门禁"的前提就是文本化。默认还不需要 Docker、GPU、embedding 服务，Python 3 + Git 就能跑。
+**为什么把知识真源保存为文本？** Markdown / YAML 便于审核、比较和回滚，也能独立于检索工具保留。向量索引依赖模型和配置，切换时可能需要重建；原始文本可以继续作为知识真源。默认核心使用 Python 标准库和 Git。
 
 **为什么用标签 BFS 联想，而不是关键词搜索或向量 RAG？** 因为人脑回忆不是跑全文搜索，是"想到 A 联想到 B"——认知科学叫激活扩散（Spreading Activation）。`tag-graph.yaml` 就是这张语义网络，BFS 扩跳就是"想到一层再想到下一层"。它比向量多了三样东西：**可解释**（每条命中带 `via_tags` 和 `tag_hop`，你能看到为什么命中）、**人可控**（拓扑自动维护，人可方便地修改完善，而非向量那样模型生成、人难干预）、**抗噪声**（靠语义结构走，不被高频词淹没）。也不用"多层记忆"那种写入时钉死层级的设计——层级该在查询时涌现，不该在写入时猜死（详见 [docs/concepts/philosophy.md](docs/concepts/philosophy.md) §3.7）。
 
@@ -71,7 +72,7 @@ YggForge 的选择：
 
 还有两个不那么显眼但很关键的取舍：**制度分层（rules/lessons/reference/templates/decisions 目录）和联想分层（tag 图）是正交的两个维度**——目录管"多严的规矩、多重的审核"，tag 图管"想到 X 联想到哪些"，互不绑架；以及**晋升门禁把"记一笔"和"立规矩"分开**——AI 可以记录、整理、提议，但强规范（rules）必须人审，`dream` 只出报告不自动动手，防止 AI 静默改你的章程。
 
-值得一提的是，这些设计不是凭直觉拍脑袋——`remember → dream → promote` 的沉淀管线在计算层面同构于人脑的记忆系统巩固模型（海马体编码 → 睡眠重放标记候选 → 选择性转移到新皮层），`associate` 的 BFS 同构于认知科学的激活扩散模型。YggForge 站在认知科学的肩膀上：它的核心管线在计算层面同构于经过数十年实验验证的人类记忆模型。详见 [docs/concepts/philosophy.md](docs/concepts/philosophy.md) §7。
+记忆整理和关联扩展提供了设计类比，不构成神经计算同构证明。框架可靠性由回归测试验证，检索效果需在实际任务上测量，见 [设计哲学](docs/concepts/philosophy.md) §7。
 
 审美上有个偏好：**短文档、可导航索引、元数据完整、少长篇单文件。** 宁可多放一个当导航索引用的 README，也不把规范堆成没人维护的巨石。
 
@@ -141,7 +142,7 @@ YggForge 运行时有三条主线：**联想**（从问题想到相关知识）�
 ```mermaid
 flowchart TB
   subgraph answer ["回答线 · 三源综合（每条问答）"]
-    hook["Read last_trigger.json / 无hook则内化AGENTS.md规则"]
+    hook["验证本轮触发结果 / 无hook则内化AGENTS.md规则"]
     model[模型形成初步判断]
     yggGate{ygg 检索?}
     yggCmd[associate / recall + Read 真源]
@@ -179,7 +180,7 @@ flowchart TB
 
 **联想 + 综合回答长什么样：**
 
-你问「拿铁和卡布奇诺的奶泡有啥区别」→ 触发检测得 `default_on`（Cursor 由 `beforeSubmitPrompt` 钩子落盘 `last_trigger.json`；**无 hook 环境由 Agent 内化 `AGENTS.md` 规则静默判断**）→ **模型先有基本判断** → 提炼 seed tags `coffee`、`latte` → `ygg associate --tag coffee --tag latte --hop 2` → 命中 `knowledge/reference/coffee-demo/...latte-vs-cappuccino-奶泡厚度.md` 等 → **WebSearch 交叉验证**（SCA 标准、现代咖啡馆做法）→ **综合三源**作答：「拿铁奶多微泡薄，卡布奇诺奶泡厚而干（约 1:1:1）」，并标注 ygg reference / 联网 / 模型推理各自来源。
+你问「拿铁和卡布奇诺的奶泡有啥区别」→ 触发检测得 `default_on`（Cursor 由 `beforeSubmitPrompt` 钩子按会话与消息保存并验证结果；**无 hook 环境由 Agent 内化 `AGENTS.md` 规则静默判断**）→ **模型先有基本判断** → 提炼 seed tags `coffee`、`latte` → `ygg associate --tag coffee --tag latte --hop 2` → 命中 `knowledge/reference/coffee-demo/...latte-vs-cappuccino-奶泡厚度.md` 等 → **WebSearch 交叉验证**（SCA 标准、现代咖啡馆做法）→ **综合三源**作答：「拿铁奶多微泡薄，卡布奇诺奶泡厚而干（约 1:1:1）」，并标注 ygg reference / 联网 / 模型推理各自来源。
 
 **记忆长什么样：**
 
@@ -263,6 +264,19 @@ ygg associate --tag coffee --hop 2
 CLI 与触发词：[ygg-cli.md](docs/reference/ygg-cli.md) · [triggers.md](docs/reference/triggers.md) · [usage.md](docs/guide/usage.md)。
 
 部署如果失败，**直接把报错和这个仓库交给 AI 排查**——最常见的坑是路径、权限、junction 和 `*.local.json` 配置，比脚本本身更容易出问题。
+
+---
+
+## 开发验证
+
+~~~bash
+python3 -S tests/run_tests.py
+python3 -S tests/check_repository.py
+~~~
+
+回归测试覆盖部署、晋升、检索、消息协议与隐私发布边界。仓库检查只读核对源码和知识，在临时副本验证新索引。详见 [发布隐私边界](docs/concepts/publication-boundary.md)。
+
+狞猫彩蛋在支持图片的宿主中优先显示 PNG/SVG；无法显示时读取原字符画兜底。
 
 ---
 

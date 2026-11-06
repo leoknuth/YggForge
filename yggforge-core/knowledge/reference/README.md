@@ -1,4 +1,4 @@
-# Reference
+﻿# Reference
 
 如果你第一次进入 `knowledge/`，建议先看：
 
@@ -40,7 +40,7 @@ YggForge 内置彩蛋的客观知识真源。通过 `caracal` tag 与 `plugins/s
 会同时发现这三条，模型据此追加规定格式的彩蛋介绍并声明触发。
 
 - `20260723-130418-caracal-狞猫.md` — 狞猫客观知识
-- `caracal-ascii.txt` — 字符画真源（35×64；回复中须 Read 后原样贴进 ```txt，禁止改写）
+- `caracal-ascii.txt` — 字符画兜底（35×64；图片不可显示时读取并原样贴入 txt 代码围栏）
 - `caracal-pixelized-8c.png` — 像素肖像（聊天给绝对路径供点击）
 - `caracal-pixelized-8c.svg` — 矢量原图（聊天同样给绝对路径）
 

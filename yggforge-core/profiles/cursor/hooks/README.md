@@ -1,33 +1,37 @@
-# Cursor hooks（YggForge）
+﻿# Cursor hooks（YggForge）
 
-- `ygg_pre_submit.py` — `beforeSubmitPrompt`：检测意图并写 `last_trigger.json`
-- `ygg_session_protocol.py` — `sessionStart`：注入路由协议 + 三源综合回答策略
+## 目录
 
-注册文件在上一级：
-
-- `hooks.json` — Linux / macOS（`python3 hooks/...`）
-- `hooks.windows.json` — Windows（`py -X utf8 hooks/...`）
+- [钩子分工](#钩子分工)
+- [验证本轮结果](#验证本轮结果)
+- [输入与跨平台](#输入与跨平台)
 
 ## 钩子分工
 
-| 钩子 | 时机 | 作用 |
-| --- | --- | --- |
-| `beforeSubmitPrompt` | 每条用户消息提交前 | 跑 `trigger_detector.py`，落盘 `last_trigger.json`（`action` / `should_trigger`） |
-| `sessionStart` | 会话开始 | 向 agent 注入完整协议：ygg 路由 + **三源综合回答**（模型推理 + ygg 检索 + 联网搜索） |
+- ygg_pre_submit.py：消息提交前检测；按会话和消息保存结果，完成写入后放行。
+- ygg_session_protocol.py：会话开始注入路由与综合回答策略；独立部署使用核心包内 CLI。
+- 上级 hooks.json 用于 Linux/macOS，hooks.windows.json 用于 Windows。
 
-Agent 回答前必须先 Read `last_trigger.json`，再按 `action` 路由；无论 `action` 为何，问答场景须综合三源作答（纯运维指令与用户声明禁网/静默除外）。真源见 `knowledge/rules/standing-preference.md`；薄规则见 `profiles/cursor/rules/ygg-answer-synthesis.mdc`。
+## 验证本轮结果
 
-## 为何 Windows 用 `py -X utf8`
+检测结果位于运行时 cache/triggers/，会话和消息 ID 以摘要作为路径键。
+消费者使用 ygg_pre_submit.py --read-trigger，提供 conversation-id、
+message-id 或本轮原文；验证会话、消息、原文摘要和默认 5 分钟有效期。
+文件通过原子替换发布，不读取旧的共享 last_trigger.json。
 
-Cursor 在系统代码页非 UTF-8（如 CP936）的 Windows 上，会经 PowerShell 把 hook stdin JSON 的非 ASCII 字段双重编码或换成 `?`。这是 Cursor 侧已知问题，不是本仓库脚本单独的 bug。
+缺少匹配身份、结果过期或原文不同，都返回 skip。
+无 hooks 环境按本轮 AGENTS 约定判断或重新检测，不使用别人的缓存。
+本轮显式授权仍由既有 behavior 门禁处理，不因读取缓存再增加一次确认。
 
-`py -X utf8` 让 Python 进程默认用 UTF-8，避免在已污染的管道上再叠加一层 GBK 误读。真正可靠的 prompt 来源仍是 `ygg_pre_submit.py` 里对 `transcript_path` 的读取。
+协议回归见 tests/test_hooks_protocol.py；综合回答真源见
+knowledge/rules/standing-preference.md。
 
-## Cursor bug 链接（请同步看 `ygg_pre_submit.py` 模块 docstring）
+## 输入与跨平台
 
-- https://forum.cursor.com/t/hook-stdin-pipe-double-encodes-non-ascii-on-non-utf-8-windows/159259
-- https://forum.cursor.com/t/windows-cursor-hooks-stdin-corrupts-utf-8-text-before-hook-script-receives-it/162295
-- https://forum.cursor.com/t/windows-cursor-hooks-corrupt-chinese-utf-8-characters-in-stdin-replaced-with-question-marks/142878
-- https://forum.cursor.com/t/on-windows-chinese-prompt-in-hooks-stdin-becomes-while-execution-log-shows-correct-text/146604
+两个 hooks 循环读取 stdin 到 EOF，输入上限 4 MiB。
+优先采用有效的当前 prompt；仅在文本缺失/损坏且 transcript 消息身份对应时恢复，
+不会因为普通问号或 Windows 平台无条件使用旧 transcript。
+编码候选不要求 Linux 存在 Windows 专用 mbcs。
 
-系统侧绕过与排查：`docs/guide/install.md`（「hook 中文乱码」一节）。
+Windows 用 py -X utf8，Linux/macOS 用 python3。
+诊断与 Cursor 上游编码问题见 docs/guide/install.md。

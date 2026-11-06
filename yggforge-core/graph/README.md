@@ -9,6 +9,7 @@
 - [5. 有序分片与查询策略](#5-有序分片与查询策略)
 - [6. 常用命令](#6-常用命令)
 - [7. Agent 使用约定](#7-agent-使用约定)
+- [8. 状态与新鲜度](#8-状态与新鲜度)
 
 ---
 
@@ -52,12 +53,16 @@
 | 列序 | 字段 | 含义 |
 | --- | --- | --- |
 | 1 | `id` | 条目全局唯一 id（排序主键）；格式见 [../../docs/concepts/retrieval-conventions.md](../../docs/concepts/retrieval-conventions.md)「条目 id 约定」 |
-| 2 | `path` | 相对仓库根的路径，如 `knowledge/rules/git-workflow.md` |
+| 2 | `path` | 相对核心包根的路径，如 `knowledge/rules/git-workflow.md` |
 | 3 | `kind` | **列名历史遗留**：值为 front matter 的 **`type`**（`rule` / `lesson` / `decision` / `template` / `source` / `distilled-source`）。条目 YAML 请写 `type:`，不要写 `kind:` |
 | 4 | `title` | 标题 |
 | 5 | `tags` | 该条目的 tag 列表，多个用 `\|` 连接 |
 | 6 | `related` | 直接关联的其他条目 id，多个用 `\|` 连接；可为空 |
 | 7 | `priority` | 优先级：`high` / `medium` / `low` / `unset` |
+| 8 | `status` | 当前生命周期状态 |
+| 9 | `confidence` | 条目置信度 |
+| 10 | `last_reviewed` | 最后审核日期 |
+| 11 | `source_fingerprint` | 源文档 SHA-256，核验正文与索引一致性 |
 
 示例（`<TAB>` = 制表符；id 里 `$` 为定长补位，见 retrieval-conventions）：
 
@@ -176,3 +181,11 @@ ygg associate --tag git --tag workflow --json
 4. **综合作答** — 把三源结果一并纳入回答，标注来源与置信度；不得仅凭 ygg 命中作答。
 
 ygg 图索引是可审计的结构化联想层，不替代模型推理与联网验证。
+
+## 8. 状态与新鲜度
+
+- associate 默认最多返回 10 条；撤销、草稿与未生效规则退出默认检索。需要历史条目时显式使用 --include-inactive。
+- graph check 是只读检查，不写分片。结果区分 consistent、migration_required、stale；旧格式只能核验已有元数据，不能宣称正文已核验。
+- manifest 的 source_digest 与每条 source_fingerprint 用于核对源文档；associate 的陈旧标记只覆盖本次涉及条目，完整检查使用 graph check。
+- graph build 才生成新索引。升级旧格式前保存备份、检查已有记录一致性，再在隔离副本验证新格式。
+- 大索引分片在单次进程内使用有界缓存；这不等于磁盘上的逐行随机访问，也不构成大规模性能评测。

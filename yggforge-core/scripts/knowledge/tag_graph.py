@@ -163,6 +163,8 @@ class TagGraph(object):
         limit_nodes = self.max_nodes if max_nodes is None else int(max_nodes)
 
         best: Dict[str, TagExpandInfo] = {}
+        # 输出只保留每个标签的最佳路径，扩展状态必须同时保留跳数预算。
+        states: Dict[Tuple[str, int], TagExpandInfo] = {}
         # heap entries: (cost, hop, tag, path_tuple)
         heap: List[Tuple[float, int, str, Tuple[str, ...]]] = []
 
@@ -174,11 +176,12 @@ class TagGraph(object):
             prev = best.get(tag)
             if prev is None or info.cost < prev.cost - 1e-15:
                 best[tag] = info
+                states[(tag, 0)] = info
                 heapq.heappush(heap, (0.0, 0, tag, (tag,)))
 
         while heap:
             cost, dist, current, path = heapq.heappop(heap)
-            cur = best.get(current)
+            cur = states.get((current, dist))
             if cur is None:
                 continue
             # stale entry
@@ -196,10 +199,10 @@ class TagGraph(object):
                 new_strength = math.exp(-new_cost)
                 new_path = path + (neighbor,)
 
-                prev = best.get(neighbor)
+                prev = states.get((neighbor, new_hop))
                 better = False
                 if prev is None:
-                    if len(best) >= limit_nodes:
+                    if neighbor not in best and len(best) >= limit_nodes:
                         continue
                     better = True
                 elif new_cost < prev.cost - 1e-15:
@@ -208,11 +211,17 @@ class TagGraph(object):
                     better = True
                 if not better:
                     continue
-                best[neighbor] = TagExpandInfo(
+                info = TagExpandInfo(
                     hop=new_hop,
                     cost=new_cost,
                     strength=new_strength,
                     path=list(new_path),
                 )
+                states[(neighbor, new_hop)] = info
+                best_info = best.get(neighbor)
+                if best_info is None or new_cost < best_info.cost - 1e-15 or (
+                    abs(new_cost - best_info.cost) <= 1e-15 and new_hop < best_info.hop
+                ):
+                    best[neighbor] = info
                 heapq.heappush(heap, (new_cost, new_hop, neighbor, new_path))
         return best

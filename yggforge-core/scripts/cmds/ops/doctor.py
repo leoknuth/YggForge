@@ -17,7 +17,10 @@ if str(SCRIPTS_ROOT) not in sys.path:
 SCRIPT_DIR = SCRIPTS_ROOT
 
 import json
+import hashlib
+import math
 import subprocess
+import time
 from typing import List, Tuple
 
 from lib.repo_paths import CORE_ROOT, GENERATED_ROOT, REPO_ROOT, RUNTIME_ROOT
@@ -202,33 +205,57 @@ def _check_hooks() -> List[Tuple[str, str]]:
 
 
 def _check_last_trigger() -> List[Tuple[str, str]]:
+    """只诊断 v2 会话缓存的结构/新鲜度，不声称已匹配 doctor 当前会话或消息。"""
     results: List[Tuple[str, str]] = []
-    lt = RUNTIME_ROOT / "cache" / "last_trigger.json"
-    if not lt.exists():
-        results.append(("yellow", "last_trigger.json 不存在（钩子未运行或 default_trigger_on_chat=false）"))
-        return results
-    results.append(("green", "last_trigger.json 存在（触发检测器曾运行）"))
-    # 三庭合议 P0-A 可观测性：parse_error 即触发线死亡，必须升红而非 OK
+    directory = RUNTIME_ROOT / "cache" / "triggers"
+    expected_root = RUNTIME_ROOT.resolve() / "cache" / "triggers"
+    if (RUNTIME_ROOT / "cache" / "last_trigger.json").exists():
+        results.append(("yellow", "发现旧全局 last_trigger.json（不消费；使用 --read-trigger 校验本轮消息）"))
     try:
-        obj = json.loads(lt.read_text(encoding="utf-8-sig"))
-    except Exception as exc:
-        results.append(("red", "last_trigger.json 解析失败: {0}".format(exc)))
-        return results
-    pe = obj.get("parse_error")
-    action = obj.get("action")
-    cdt = obj.get("chat_default_trigger")
-    if pe:
-        results.append((
-            "red",
-            "last_trigger.json 含 parse_error（钩子 stdin 解析失败→default_trigger 静默 skip）：{0}".format(pe),
-        ))
-    elif action == "skip" and cdt is None:
-        results.append((
-            "yellow",
-            "last_trigger.json action=skip 且 chat_default_trigger=null（默认触发未路由；若 default_trigger_on_chat=true 则疑似失效）",
-        ))
-    elif action in ("default_on", "explicit_ygg") or obj.get("should_trigger"):
-        results.append(("green", "最近一次触发 action={0}".format(action)))
+        directory.resolve().relative_to(expected_root)
+    except ValueError:
+        return results + [("red", "triggers/ 缓存目录越界，停止读取")]
+    if not directory.is_dir():
+        return results + [("yellow", "triggers/ 不存在（尚无带会话 ID 的 v2 钩子结果；可按本轮消息重新检测）")]
+    paths = sorted(directory.glob("*/latest.json"))
+    if not paths:
+        return results + [("yellow", "triggers/ 无会话 latest.json（尚未保存 v2 结果）")]
+
+    fresh = stale = broken = failed = 0
+    now = time.time()
+    for path in paths:
+        try:
+            path.resolve().relative_to(expected_root)
+            obj = json.loads(path.read_text(encoding="utf-8-sig"))
+            if not isinstance(obj, dict) or obj.get("protocol_version") != 2:
+                raise ValueError("invalid protocol")
+            cid, mid, prompt = obj.get("conversation_id"), obj.get("message_id"), obj.get("prompt")
+            if not isinstance(cid, str) or not cid or not isinstance(mid, str) or not mid or not isinstance(prompt, str):
+                raise ValueError("invalid identity")
+            digest = hashlib.sha256(cid.encode("utf-8")).hexdigest()
+            if path.parent.name != digest or obj.get("prompt_sha256") != hashlib.sha256(prompt.strip().encode("utf-8")).hexdigest():
+                raise ValueError("invalid digest")
+            if not isinstance(obj.get("should_trigger"), bool) or not isinstance(obj.get("action"), str):
+                raise ValueError("invalid action")
+            created = float(obj["created_at_unix"])
+            if not math.isfinite(created) or now - created < -5:
+                raise ValueError("invalid time")
+            if obj.get("parse_error") or obj.get("detector_stderr") or str(obj.get("reason") or "").startswith("detector "):
+                failed += 1
+            if now - created > 300:
+                stale += 1
+            else:
+                fresh += 1
+        except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+            broken += 1
+    if broken:
+        results.append(("red", "v2 会话缓存有 {0} 份结构/身份/摘要/时间无效；未输出原文".format(broken)))
+    if failed:
+        results.append(("yellow", "v2 会话缓存有 {0} 份检测失败诊断；请按本轮消息重新检测".format(failed)))
+    if stale:
+        results.append(("yellow", "v2 会话缓存有 {0} 份已超过 5 分钟，不能沿用其动作".format(stale)))
+    if fresh:
+        results.append(("green", "v2 会话缓存有 {0} 份新鲜且结构合理；本轮仍须 --read-trigger 核对会话/消息或原文".format(fresh)))
     return results
 
 

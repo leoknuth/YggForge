@@ -1,4 +1,4 @@
----
+﻿---
 description: 综合回答策略——ygg 检索 + 模型推理 + 联网搜索（强制，不依赖 associate 命中）
 alwaysApply: true
 ---
@@ -15,7 +15,7 @@ alwaysApply: true
 ## 必须综合的三源
 
 1. **模型自身推理**：先形成初步理解与判断框架。
-2. **ygg 检索**：按 `last_trigger.json` 的 `action` 路由（`associate` / `recall` 等）；`skip` 时可跳过 ygg 以省 token。
+2. **ygg 检索**：按本轮身份、原文与时效验证通过的触发结果路由（`associate` / `recall` 等）；`skip` 时可跳过 ygg 以省 token。
 3. **联网搜索**：使用 WebSearch / WebFetch；事实类、时效敏感、外部标准/最佳实践类问题**必须**搜索。
 
 **不得仅凭 ygg 联想/检索结果作答。**
@@ -32,7 +32,7 @@ alwaysApply: true
 
 - `default_on`：模型推理 → ygg associate/recall → Read 命中真源 → **联网搜索** → 综合作答。
 - `skip`：跳过 ygg；仍执行模型推理 + **按需联网** + 综合作答。
-- 读不到 `last_trigger.json`：同 `skip`（fail open）。
+- 找不到本轮匹配结果：不复用旧缓存；无 hook 环境按当前消息内化规则或重新检测。
 
 ## 输出要求
 

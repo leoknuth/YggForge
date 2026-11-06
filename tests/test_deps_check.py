@@ -10,7 +10,9 @@ import 名归并（pyyaml → yaml）。纯标准库，pytest 与 `py -X utf8` �
 """
 import sys
 import tempfile
+import types
 from pathlib import Path
+from unittest.mock import patch
 
 _SCRIPTS = Path(__file__).resolve().parent.parent / "yggforge-core" / "scripts"
 if str(_SCRIPTS) not in sys.path:
@@ -43,16 +45,17 @@ def test_check_deps_detects_installed_and_missing():
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".txt", delete=False, prefix="ygg_req_"
     ) as f:
-        # pyyaml 已装；nonexistent 肯定没装
+        # 安装探测用合成模块验证，不要求测试环境安装 PyYAML。
         f.write("pyyaml>=5.0\nnonexistent-ygg-test-xyz>=0.0.1\n")
         path = Path(f.name)
     try:
-        results = check_deps(path)
-        by_pkg = {d["package"]: d for d in results}
-        assert by_pkg["pyyaml"]["installed"] is True
-        assert by_pkg["nonexistent-ygg-test-xyz"]["installed"] is False
-        missing = missing_deps(path)
-        assert missing == ["nonexistent-ygg-test-xyz"]
+        with patch.dict(sys.modules, {"yaml": types.ModuleType("yaml")}):
+            results = check_deps(path)
+            by_pkg = {d["package"]: d for d in results}
+            assert by_pkg["pyyaml"]["installed"] is True
+            assert by_pkg["nonexistent-ygg-test-xyz"]["installed"] is False
+            missing = missing_deps(path)
+            assert missing == ["nonexistent-ygg-test-xyz"]
     finally:
         path.unlink(missing_ok=True)
 

@@ -63,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter by channel (repeatable or comma-separated). Example: --channel wechat --channel cursor",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON for Agent consumption.")
+    parser.add_argument("--include-inactive", action="store_true", help="显式检索非生效规则")
     return parser
 
 def flatten_values(values: List[str]) -> List[str]:
@@ -77,6 +78,8 @@ def flatten_values(values: List[str]) -> List[str]:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.limit is not None and args.limit < 0:
+        parser.error("--limit 不能为负数")
 
     kinds = flatten_values(args.type)
     tags = flatten_values(args.tag)
@@ -97,6 +100,7 @@ def main() -> int:
         scope=scope or None,
         agents=agents or None,
         channels=channels or None,
+        include_inactive=args.include_inactive,
     )
 
     if args.json:
@@ -124,6 +128,9 @@ def main() -> int:
     for idx, item in enumerate(results, start=1):
         print("[{0}]".format(idx))
         print("  type          : {0}".format(item["type"]))
+        print("  status        : {0}".format(item["status"] or "<unknown>"))
+        print("  confidence    : {0}".format(item["confidence"] or "<unknown>"))
+        print("  last_reviewed : {0}".format(item["last_reviewed"] or "<unknown>"))
         print("  title         : {0}".format(item["title"]))
         print("  title_refined : {0}".format(item.get("title_refined", "") or "<none>"))
         print("  path          : {0}".format(item["path"]))

@@ -5,6 +5,7 @@
 from __future__ import print_function
 
 from pathlib import Path
+import hashlib
 from typing import List, Set, Tuple
 
 from lib.common import normalize_tag
@@ -77,6 +78,7 @@ def should_skip_path(path: Path, repo_root: Path) -> bool:
 def scan_knowledge_entries(
     repo_root: Path,
     max_depth: int,
+    include_inactive: bool = False,
 ) -> Tuple[List[KnowledgeEntry], List[str]]:
     """扫描 knowledge/ 与 plugins/ 下正式条目，返回条目列表与警告。"""
     entries: List[KnowledgeEntry] = []
@@ -105,6 +107,9 @@ def scan_knowledge_entries(
                 metadata, path=rel, kind=entry_type, require_index_fields=True
             )
             warnings.extend(format_issues(schema_errors, schema_warnings))
+            status = str(metadata.get("status", "")).strip().lower()
+            if entry_type == "rule" and status != "active" and not include_inactive:
+                continue
             entry_id = str(metadata.get("id", "")).strip()
             if not entry_id or entry_id.startswith("<") or "slug" in entry_id:
                 warnings.append("缺少有效 id，已跳过: {0}".format(rel))
@@ -128,6 +133,10 @@ def scan_knowledge_entries(
                     tags=tags,
                     related=related,
                     priority=priority,
+                    status=status,
+                    confidence=str(metadata.get("confidence", "")).strip().lower(),
+                    last_reviewed=str(metadata.get("last_reviewed", "")).strip(),
+                    source_fingerprint=hashlib.sha256(path.read_bytes()).hexdigest(),
                 )
             )
     return entries, warnings

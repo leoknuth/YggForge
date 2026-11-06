@@ -26,6 +26,7 @@ from backends import get_memory_backend
 # 用户显式站立偏好：视为对「晋升到 rules」的人类确认
 STANDING_PATTERNS = [
     r"以后一直这样",
+    r"(?:以后|今后|往后|从现在开始|从今以后)[^。！？\n]{0,36}(?:始终|一直|永久|一律|必须)",
     r"写成规则",
     r"写进规则",
     r"升级成规则",
@@ -34,15 +35,27 @@ STANDING_PATTERNS = [
     r"晋升为?\s*rules?",
     r"作为规则",
     r"变成规范",
-    r"强约束",
-    r"必须遵守",
-    r"自动.*(升级|晋升).*(规则|rules?)",
-    r"应该自动.*(规则|rules?)",
+    r"自动[^。！？\n]{0,20}(升级|晋升)[^。！？\n]{0,20}(规则|rules?)",
+    r"应该自动[^。！？\n]{0,20}(规则|rules?)",
     r"from now on\s+always",
-    r"always do (this|it)",
+    r"(?:^|[.!?\n])\s*(?:please\s+)?always do (this|it)\b",
     r"make (this|it) a rule",
     r"promote to rule",
 ]
+
+NEGATIVE_STANDING_PATTERNS = [
+    r"(?:不要|不需要|无需|不用|不能|不应(?:该)?|不得|不可|不准|不是|并非|不再|暂(?:时)?不|尚不|别|禁止|停止|取消|拒绝)[^。！？\n]{0,24}(?:规则|规范|晋升|升级|一直这样|始终|永久|一律|长期|必须遵守)",
+    r"(?:\bdo\s+not\b|\bdon['’]t\b|\bnot\b|\bnever\b|\bno\s+need\b|\bwithout\b)[^.!?\n]{0,40}(?:\brules?\b|\bpromot\w*\b|\balways\b|\bfrom now on\b)",
+    r"(?:写成规则|作为规则|晋升规则|升级规则)[^。！？\n]{0,12}(?:不需要|没必要|不可|不应|不允许)",
+]
+
+
+def _unquoted_text(text: str) -> str:
+    """引用、代码和例子本身不能提供自动晋升规则的人类授权。"""
+    text = re.sub(r"```[\s\S]*?```|`[^`\n]*`", " ", text)
+    for opening, closing in (("“", "”"), ("‘", "’"), ("「", "」"), ("『", "』"), ('"', '"')):
+        text = re.sub(re.escape(opening) + r"[\s\S]*?" + re.escape(closing), " ", text)
+    return re.sub(r"(?<!\w)'[^']*'(?!\w)", " ", text)
 
 def _force_from_args(args: argparse.Namespace) -> Optional[str]:
     if getattr(args, "yes", False) and getattr(args, "no", False):
@@ -54,8 +67,14 @@ def _force_from_args(args: argparse.Namespace) -> Optional[str]:
     return None
 
 def detect_standing_intent(*texts: str) -> bool:
+    """只识别用户未引用、未否定的明确规则或长期指令；不确定时保留草稿。"""
     blob = "\n".join(t for t in texts if t).strip()
     if not blob:
+        return False
+    blob = _unquoted_text(blob)
+    if any(re.search(pattern, blob, re.IGNORECASE) for pattern in NEGATIVE_STANDING_PATTERNS):
+        return False
+    if re.search(r"候选|草稿|摘录|引用|示例|例子|假设|仅供讨论|(?:文中|原文|文章)[^。！？\n]{0,16}(?:提到|写道|要求|规定)|\b(?:quote[ds]?|quotation|excerpt|draft|example|hypothetical)\b", blob, re.IGNORECASE):
         return False
     for pattern in STANDING_PATTERNS:
         if re.search(pattern, blob, re.IGNORECASE):
@@ -63,13 +82,13 @@ def detect_standing_intent(*texts: str) -> bool:
     return False
 
 def _slug_name(title: str) -> str:
-    """从标题生成规则文件名（ascii 优先，否则用 standing-rule 时间戳式短名）。"""
+    """保留中英文标题生成独立文件名，避免中文偏好全部撞同一个规则。"""
     text = (title or "").strip().lower()
-    # 保留已有英文/数字/连字符
-    ascii_slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
-    if len(ascii_slug) >= 4 and re.search(r"[a-z]", ascii_slug):
-        return ascii_slug[:48] + ".md"
-    return "standing-preference.md"
+    slug = re.sub(r"[^\w]+", "-", text, flags=re.UNICODE).strip("-")
+    if slug:
+        return slug[:48] + ".md"
+    from uuid import uuid4
+    return "standing-{0}.md".format(uuid4().hex[:12])
 
 def _auto_promote_standing(draft_path: str, title: str, force: Optional[str], as_json: bool) -> dict:
     """remember 成功后，对站立偏好自动 promote --auto --to rule --standing。"""
@@ -173,8 +192,8 @@ def main() -> int:
     from policies.behavior import authorize
 
     standing = bool(args.standing) or args.as_kind == "rule"
-    if not standing:
-        standing = detect_standing_intent(note, args.title or "", args.title_refined or "")
+    if not standing and args.source.strip().lower() == "user":
+        standing = detect_standing_intent(note, args.title or "")
 
     decisions = {}
 
@@ -273,7 +292,10 @@ def main() -> int:
             as_json=True,
         )
         result["promote"] = promote_info
-        if promote_info.get("status") == "ok":
+        promoted_items = (promote_info.get("result") or {}).get("results") or []
+        if promote_info.get("status") == "ok" and promoted_items and all(
+            item.get("write") == "ok" for item in promoted_items
+        ):
             result["status"] = "recorded_and_promoted_rule"
         else:
             result["status"] = "recorded_promote_pending"

@@ -6,6 +6,7 @@ from __future__ import print_function
 
 import bisect
 import json
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -50,8 +51,9 @@ class SortedShardStore(object):
         self.manifest_path = root_dir / "manifest.json"
         self._memory: Optional[Dict[str, str]] = None
         self._manifest: Optional[Dict[str, Any]] = None
+        self._shard_cache: OrderedDict = OrderedDict()
 
-    def write_records(self, records: Dict[str, str]) -> Dict[str, Any]:
+    def write_records(self, records: Dict[str, str], source_digest: Optional[str] = None) -> Dict[str, Any]:
         """将 records 按 key 排序后写入分片，并生成 manifest。"""
         self.root_dir.mkdir(parents=True, exist_ok=True)
         # 清理旧分片
@@ -94,11 +96,14 @@ class SortedShardStore(object):
             "files": files_meta,
             "banner": GENERATED_BANNER.strip(),
         }
+        if source_digest is not None:
+            manifest["source_digest"] = source_digest
         with self.manifest_path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
         self._manifest = manifest
         self._memory = None
+        self._shard_cache.clear()
         return manifest
 
     def _partition(
@@ -168,7 +173,7 @@ class SortedShardStore(object):
         for file_meta in manifest.get("files", []):
             path = self.root_dir / str(file_meta["file"])
             if not path.exists():
-                continue
+                raise GraphError("索引分片缺失: {0}".format(path))
             for line in path.read_text(encoding="utf-8").splitlines():
                 if not line or line.startswith("#"):
                     continue
@@ -245,15 +250,22 @@ class SortedShardStore(object):
             return None
         return self.root_dir / str(best["file"])
 
-    @staticmethod
-    def _bisect_file(path: Path, key: str) -> Optional[str]:
+    def _bisect_file(self, path: Path, key: str) -> Optional[str]:
         """在有序 TSV 文件中对行做二分查找。"""
-        lines = [
-            line
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line and not line.startswith("#")
-        ]
-        keys = [line.partition("\t")[0] for line in lines]
+        stat = path.stat()
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cached = self._shard_cache.get(path)
+        if cached is not None and cached[0] == signature:
+            _, lines, keys = cached
+            self._shard_cache.move_to_end(path)
+        else:
+            lines = [line for line in path.read_text(encoding="utf-8").splitlines()
+                     if line and not line.startswith("#")]
+            keys = [line.partition("\t")[0] for line in lines]
+            self._shard_cache[path] = (signature, lines, keys)
+            self._shard_cache.move_to_end(path)
+            while len(self._shard_cache) > 8:
+                self._shard_cache.popitem(last=False)
         idx = bisect.bisect_left(keys, key)
         if idx < len(keys) and keys[idx] == key:
             return lines[idx].partition("\t")[2]

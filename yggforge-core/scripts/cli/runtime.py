@@ -19,7 +19,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent.parent
 SYNC_POLICY_PATH = CORE_ROOT / "config" / "sync.defaults.json"
 LOCAL_SYNC_POLICY_PATH = RUNTIME_ROOT / "config" / "sync.local.json"
 MANIFEST_ROOT = GENERATED_ROOT / "deploy-manifests"
-KNOWN_TARGETS = ("cursor", "codex", "opencode")
+KNOWN_TARGETS = ("cursor", "codex", "opencode", "claude", "openclaw")
 
 
 def load_sync_policy() -> Dict[str, Any]:
@@ -175,6 +175,13 @@ def maybe_import_targets(action: str, targets: List[str], policy: Dict[str, Any]
             continue
 
         mode = str(manifest.get("mode", "")).strip().lower()
+        # link 的单个映射可能实际复制，反向同步按真实结果决定。
+        actual_modes = {
+            str(item.get("actual_mode", "")).strip().lower()
+            for item in manifest.get("mappings", [])
+        }
+        if mode == "link" and (manifest.get("requires_import") or "copy" in actual_modes):
+            mode = "copy"
         mode_policy = mode_actions.get(mode, {})
         should_import = bool(mode_policy.get(policy_key, False))
         preview_only = bool(mode_policy.get("preview_only", False))
@@ -193,5 +200,3 @@ def maybe_import_targets(action: str, targets: List[str], policy: Dict[str, Any]
         print("ygg import     : start -> {0} mode={1}".format(target, mode), flush=True)
         if run_python("deploy.py", import_args) != 0:
             raise YggError("`ygg {0}` failed while importing target '{1}'.".format(action, target))
-
-

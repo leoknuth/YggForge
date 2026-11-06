@@ -34,12 +34,14 @@ def route_explicit(action: str, rest: List[str]) -> int:
             token = rest[idx]
             if token == "--scope":
                 idx += 1
-                if idx < len(rest):
-                    scope = rest[idx]
+                if idx >= len(rest) or rest[idx].startswith("--"):
+                    raise YggError("ygg {0} --scope requires a value.".format(action))
+                scope = rest[idx]
             elif token == "--project-root":
                 idx += 1
-                if idx < len(rest):
-                    project_root = rest[idx]
+                if idx >= len(rest) or rest[idx].startswith("--"):
+                    raise YggError("ygg {0} --project-root requires a value.".format(action))
+                project_root = rest[idx]
             else:
                 targets.append(token)
             idx += 1
@@ -52,6 +54,9 @@ def route_explicit(action: str, rest: List[str]) -> int:
 
     if action == "deploy":
         rest, force = _pop_force_flags(rest)
+        if force == "deny":
+            print("deploy_status  : skipped (--no)")
+            return 0
         mode = "link"
         scope = "user"
         project_root = None
@@ -69,12 +74,14 @@ def route_explicit(action: str, rest: List[str]) -> int:
                 install_deps = True
             elif token == "--scope":
                 idx += 1
-                if idx < len(rest):
-                    scope = rest[idx]
+                if idx >= len(rest) or rest[idx].startswith("--"):
+                    raise YggError("ygg {0} --scope requires a value.".format(action))
+                scope = rest[idx]
             elif token == "--project-root":
                 idx += 1
-                if idx < len(rest):
-                    project_root = rest[idx]
+                if idx >= len(rest) or rest[idx].startswith("--"):
+                    raise YggError("ygg {0} --project-root requires a value.".format(action))
+                project_root = rest[idx]
             else:
                 targets.append(token)
             idx += 1
@@ -87,9 +94,13 @@ def route_explicit(action: str, rest: List[str]) -> int:
             deploy_args.append("--backup")
         if install_deps:
             deploy_args.append("--install-deps")
+        if force == "dry_run":
+            deploy_args.append("--dry-run")
         code = run_python("deploy.py", deploy_args)
         if code != 0:
             return code
+        if force == "dry_run":
+            return 0
         # 项目级部署是本机投影，不触发远端 git update
         if scope == "project":
             return 0
@@ -110,20 +121,29 @@ def route_explicit(action: str, rest: List[str]) -> int:
         return run_python("git_sync.py", git_sync_args("sync", sync_policy))
 
     if action == "import":
+        rest, force = _pop_force_flags(rest)
+        if force == "deny":
+            print("import_status  : skipped (--no)")
+            return 0
         scope = "user"
         project_root = None
+        preview_only = force == "dry_run"
         targets: List[str] = []
         idx = 0
         while idx < len(rest):
             token = rest[idx]
             if token == "--scope":
                 idx += 1
-                if idx < len(rest):
-                    scope = rest[idx]
+                if idx >= len(rest) or rest[idx].startswith("--"):
+                    raise YggError("ygg {0} --scope requires a value.".format(action))
+                scope = rest[idx]
             elif token == "--project-root":
                 idx += 1
-                if idx < len(rest):
-                    project_root = rest[idx]
+                if idx >= len(rest) or rest[idx].startswith("--"):
+                    raise YggError("ygg {0} --project-root requires a value.".format(action))
+                project_root = rest[idx]
+            elif token == "--preview-only":
+                preview_only = True
             else:
                 targets.append(token)
             idx += 1
@@ -132,6 +152,8 @@ def route_explicit(action: str, rest: List[str]) -> int:
         import_args = ["--action", "import", "--scope", scope, "--targets"] + targets
         if project_root:
             import_args += ["--project-root", project_root]
+        if preview_only:
+            import_args.append("--preview-only")
         return run_python("deploy.py", import_args)
 
     if action == "sync":
@@ -173,17 +195,45 @@ def route_explicit(action: str, rest: List[str]) -> int:
             raise YggError("`ygg ingest` requires a URL or supported source path.")
         first = rest[0]
         if first.startswith("http://") or first.startswith("https://"):
-            slug = rest[1] if len(rest) > 1 else None
             args = ["--url", first]
-            if slug:
-                args.extend(["--slug", slug])
+            idx = 1
+            while idx < len(rest):
+                token = rest[idx]
+                if token == "--save-raw-html":
+                    args.append(token)
+                elif token == "--slug":
+                    idx += 1
+                    if idx >= len(rest):
+                        raise YggError("`ygg ingest --slug` requires a value.")
+                    args.extend(["--slug", rest[idx]])
+                elif idx == 1 and not token.startswith("--"):
+                    args.extend(["--slug", token])
+                else:
+                    raise YggError("Unrecognized `ygg ingest` token: {0}".format(token))
+                idx += 1
             return run_python("ingest.py", args)
         raise YggError("Current `ygg ingest` only supports URL input.")
 
     if action == "distill":
         if not rest:
             return run_python("distill.py", ["--latest"])
-        return run_python("distill.py", ["--input", rest[0]])
+        args = []
+        idx = 0
+        while idx < len(rest):
+            token = rest[idx]
+            if token == "--latest":
+                args.append(token)
+            elif token in ("--input", "--slug"):
+                idx += 1
+                if idx >= len(rest):
+                    raise YggError("`ygg distill {0}` requires a value.".format(token))
+                args.extend([token, rest[idx]])
+            elif idx == 0 and not token.startswith("--"):
+                args.extend(["--input", token])
+            else:
+                raise YggError("Unrecognized `ygg distill` token: {0}".format(token))
+            idx += 1
+        return run_python("distill.py", args)
 
     if action == "dream":
         args: List[str] = []
@@ -213,6 +263,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
         agents: List[str] = []
         channels: List[str] = []
         as_json = False
+        include_inactive = False
         idx = 0
         while idx < len(rest):
             token = rest[idx]
@@ -248,6 +299,8 @@ def route_explicit(action: str, rest: List[str]) -> int:
                 channels.append(rest[idx])
             elif token == "--json":
                 as_json = True
+            elif token == "--include-inactive":
+                include_inactive = True
             elif token.startswith("--"):
                 raise YggError("Unrecognized `ygg recall` token: {0}".format(token))
             else:
@@ -274,6 +327,8 @@ def route_explicit(action: str, rest: List[str]) -> int:
             args.extend(["--channel", channel])
         if as_json:
             args.append("--json")
+        if include_inactive:
+            args.append("--include-inactive")
         return run_python("recall.py", args)
 
     if action == "remember":
@@ -350,21 +405,8 @@ def route_explicit(action: str, rest: List[str]) -> int:
         if force_yes and force_no:
             raise YggError("`ygg remember` --yes 与 --no 不能同时使用")
 
-        # 自然语言里的站立意图也升级为 --as rule
         note_joined = " ".join(note_tokens)
-        standing_hints = (
-            "以后一直这样",
-            "写成规则",
-            "写进规则",
-            "升级成规则",
-            "作为规则",
-            "变成规范",
-        )
-        if any(h in note_joined for h in standing_hints) or (
-            title and any(h in title for h in standing_hints)
-        ):
-            as_kind = "rule"
-            standing = True
+        # 文字中的长期意图由记忆模块统一判定，避免路由层把否定或引用升级。
 
         args = ["--note", note_joined, "--source", source, "--scope", scope]
         if title:
@@ -402,6 +444,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
         force_no = False
         auto_promote = False
         standing = False
+        objective = False
         idx = 0
         while idx < len(rest):
             token = rest[idx]
@@ -428,12 +471,16 @@ def route_explicit(action: str, rest: List[str]) -> int:
                 auto_promote = True
             elif token == "--standing":
                 standing = True
+            elif token == "--objective":
+                objective = True
             elif token == "--yes":
                 force_yes = True
             elif token == "--no":
                 force_no = True
             elif token == "--json":
                 as_json = True
+            elif token.startswith("--"):
+                raise YggError("Unrecognized `ygg promote` token: {0}".format(token))
             else:
                 entries.append(token)
             idx += 1
@@ -460,6 +507,8 @@ def route_explicit(action: str, rest: List[str]) -> int:
             args.append("--auto")
         if standing:
             args.append("--standing")
+        if objective:
+            args.append("--objective")
         if force_yes:
             args.append("--yes")
         if force_no:
@@ -589,7 +638,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
                 if idx >= len(rest):
                     raise YggError("`ygg associate --type` requires a value.")
                 args.extend(["--type", rest[idx]])
-            elif token in ("--no-entry-related", "--json"):
+            elif token in ("--no-entry-related", "--json", "--include-inactive"):
                 args.append(token)
             else:
                 raise YggError("Unrecognized `ygg associate` token: {0}".format(token))
@@ -664,5 +713,3 @@ def route_explicit(action: str, rest: List[str]) -> int:
         return run_python("tag_cli.py", args)
 
     raise YggError("Unknown explicit action: {0}".format(action))
-
-

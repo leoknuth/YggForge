@@ -39,7 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="不合并条目 front matter related 一跳",
     )
-    parser.add_argument("--limit", type=int, default=None, help="最多返回多少条")
+    parser.add_argument("--limit", type=int, default=10, help="最多返回多少条（默认 10）")
+    parser.add_argument("--include-inactive", action="store_true", help="显式查看索引中的非生效规则")
     parser.add_argument(
         "--type",
         action="append",
@@ -62,6 +63,8 @@ def main() -> int:
     args = parser.parse_args()
     if not args.tag:
         parser.error("至少提供一个 --tag 作为种子")
+    if args.limit < 0:
+        parser.error("--limit 不能为负数")
 
     try:
         index = KnowledgeGraphIndex()
@@ -71,6 +74,7 @@ def main() -> int:
             include_entry_related=not args.no_entry_related,
             limit=args.limit,
             types=args.type or None,
+            include_inactive=args.include_inactive,
         )
     except GraphError as exc:
         print(str(exc), file=sys.stderr)
@@ -84,6 +88,11 @@ def main() -> int:
                 "entry_related_hops": meta["entry_related_hops"],
                 "expanded_tags": meta["expanded_tags"],
                 "hit_count": meta["hit_count"],
+                "total_hit_count": meta["total_hit_count"],
+                "truncated": meta["truncated"],
+                "index_stale": meta["index_stale"],
+                "freshness_scope": meta["freshness_scope"],
+                "missing_entries": meta["missing_entries"],
                 "types": meta.get("types", []),
                 "weight": meta.get("weight", {}),
             },
@@ -96,6 +105,10 @@ def main() -> int:
                     "tags": hit.entry.tags,
                     "related": hit.entry.related,
                     "priority": hit.entry.priority,
+                    "status": hit.entry.status,
+                    "confidence": hit.entry.confidence,
+                    "last_reviewed": hit.entry.last_reviewed,
+                    "index_stale": hit.entry.index_stale,
                     "via_tags": hit.via_tags,
                     "min_tag_hop": hit.min_tag_hop,
                     "from_entry_related": hit.from_entry_related,
@@ -125,11 +138,16 @@ def main() -> int:
         )
     )
     print("associate_hits  : {0}".format(len(hits)))
+    print("associate_total : {0}".format(meta["total_hit_count"]))
+    print("associate_stale : {0}".format("yes" if meta["index_stale"] else "no"))
     for idx, hit in enumerate(hits, start=1):
         print("[{0}]".format(idx))
         print("  id        : {0}".format(hit.entry.id))
         print("  path      : {0}".format(hit.entry.path))
         print("  type      : {0}".format(hit.entry.kind))
+        print("  status    : {0}".format(hit.entry.status or "unknown"))
+        print("  confidence: {0}".format(hit.entry.confidence or "unknown"))
+        print("  reviewed  : {0}".format(hit.entry.last_reviewed or "unknown"))
         print("  title     : {0}".format(hit.entry.title))
         print("  via_tags  : {0}".format(",".join(hit.via_tags) if hit.via_tags else "-"))
         print("  tag_hop   : {0}".format(hit.min_tag_hop if not hit.from_entry_related else "-"))

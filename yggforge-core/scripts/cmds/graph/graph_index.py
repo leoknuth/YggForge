@@ -30,6 +30,7 @@ from knowledge.graph import (  # noqa: E402
     load_graph_config,
     scan_knowledge_entries,
 )
+from knowledge.graph_build import check_indexes
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build or check YggForge knowledge graph indexes.")
@@ -78,7 +79,7 @@ def main() -> int:
         return 1 if (args.check and warnings) else 0
 
     try:
-        result = build_indexes(config=config)
+        result = build_indexes(config=config) if args.build else check_indexes(config=config)
     except GraphError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -108,6 +109,8 @@ def main() -> int:
             ),
             "status": "built" if args.build else "checked",
         }
+        if args.check:
+            payload.update({key: result[key] for key in ("index_status", "migration_required", "consistency_errors", "source_consistency")})
         json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
         if args.check and result["warnings"]:
@@ -126,6 +129,9 @@ def main() -> int:
     )
     for warning in result["warnings"]:
         print("graph_warn    : {0}".format(warning))
+    if args.check:
+        print("graph_status  : {0}".format(result["index_status"]))
+        print("graph_sources : {0}".format(result["source_consistency"]))
 
     if by_tag_code is None:
         print("by_tag_status : skipped (optional export; use --with-by-tag or ygg index)")
