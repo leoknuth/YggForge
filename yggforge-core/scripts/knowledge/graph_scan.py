@@ -5,11 +5,10 @@
 from __future__ import print_function
 
 from pathlib import Path
-import hashlib
 from typing import List, Set, Tuple
 
 from lib.common import normalize_tag
-from lib.front_matter import as_str_list, parse_front_matter
+from lib.front_matter import as_str_list, parse_front_matter, source_text_fingerprint
 
 from knowledge.graph_models import KnowledgeEntry
 from knowledge.schema import (
@@ -136,7 +135,7 @@ def scan_knowledge_entries(
                     status=status,
                     confidence=str(metadata.get("confidence", "")).strip().lower(),
                     last_reviewed=str(metadata.get("last_reviewed", "")).strip(),
-                    source_fingerprint=hashlib.sha256(path.read_bytes()).hexdigest(),
+                    source_fingerprint=source_text_fingerprint(path.read_bytes()),
                 )
             )
     return entries, warnings

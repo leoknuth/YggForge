@@ -5,7 +5,6 @@
 from __future__ import print_function
 
 from pathlib import Path
-import hashlib
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from lib.common import normalize_tag
@@ -85,7 +84,8 @@ class KnowledgeGraphIndex(object):
             self._missing_entries.add(entry_id)
             return None
         metadata, _body = parse_front_matter(raw.decode("utf-8-sig"))
-        entry.index_stale = entry.source_fingerprint != hashlib.sha256(raw).hexdigest()
+        from lib.front_matter import source_text_fingerprint
+        entry.index_stale = entry.source_fingerprint != source_text_fingerprint(raw)
         entry.kind = resolve_entry_type(metadata, entry.path)
         entry.title = str(metadata.get("title") or entry.title)
         entry.priority = str(metadata.get("priority") or "unset").strip().lower()

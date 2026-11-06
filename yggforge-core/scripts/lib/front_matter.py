@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -207,3 +208,6 @@ def as_str_list(value: Any) -> List[str]:
     if text in ("[]", "{}", "null", "~"):
         return []
     return [text] if text else []
+def source_text_fingerprint(data: bytes) -> str:
+    """按 Git 文本换行规范计算指纹，避免平台换行差异造成假过期。"""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
