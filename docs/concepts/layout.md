@@ -18,8 +18,8 @@
 | 目录 | 角色 | 是否进 git | 是否部署到 Agent |
 | --- | --- | --- | --- |
 | `yggforge-core/` | 可版本化产品真源（知识、投影、脚本、图索引、默认可提交配置） | **是** | **是**（整包 → `yggforge-core/`） |
-| `yggforge-generated/` | 可再生产物（部署清单、rendered/imports、可选导览、scratch） | 仅 README | 否 |
-| `yggforge-runtime/` | 本机可变状态（记忆 raw/index、`*.local.json`、cache） | 仅 README | 否 |
+| `yggforge-generated/` | 可再生产物（部署清单、rendered/imports、可选导览、scratch） | README 与 .gitignore | 否 |
+| `yggforge-runtime/` | 本机可变状态（记忆 raw/index、`*.local.json`、cache） | README 与 .gitignore | 否 |
 | `docs/` | 人类设计与使用文档 | 是 | 否 |
 
 `yggforge-core` **不应**再把「忽略名单」写进仓库根 `.gitignore`；需要忽略的内容迁出到 generated / runtime。
@@ -29,42 +29,77 @@
 ## 2. 仓库内三层（开发态）
 
 ```text
-YggForge/                              # REPO_ROOT
-├── docs/                              # 人类文档
-├── AGENTS.md / README.md
-├── ygg.sh / ygg.ps1                   # CLI 薄包装
-├── .agents/skills/                    # 可选：仓内 Cursor 第三方/工具技能（非 YggForge 插件投影）
+YggForge/
+├── .git/                         [本地] Git 对象、索引、SSH 远端配置
+├── .github/                      [Git] GitHub CI 配置
+├── .agents/skills/               [混合] 指定内置技能进 Git，安装产物留本地
+├── docs/                         [Git] 设计、部署、使用和接口文档
+├── tests/                        [Git] 回归验证
+├── AGENTS.md / README.md         [Git] 仓库维护约定与总入口
+├── ygg.ps1 / ygg.sh              [Git] CLI 包装
+├── .editorconfig/.gitattributes  [Git] 编码、换行与 Git 文本规范
+├── .gitignore / 许可与 CI 文件  [Git] 忽略边界、许可、构建配置
 │
-├── yggforge-core/                     # CORE_ROOT · 可部署产品
-│   ├── knowledge/                     # 知识真源（rules/templates/lessons/reference/…）
-│   ├── plugins/                       # 可部署能力包（skills/mcp-servers/hooks/rules）正文
-│   ├── profiles/                      # 各 Agent 投影入口（含 cursor/rules、cursor/skills stub）
-│   ├── scripts/                       # CLI 与自动化（内部结构见 scripts/README.md）
-│   ├── config/                        # 默认可提交配置（*.defaults.json / channels 等）
-│   ├── graph/
-│   │   ├── tag-graph.yaml             # 可编辑的 tag 邻接权威
-│   │   ├── tag-synonyms.yaml          # 同义词归并与 tag 规范语言
-│   │   ├── catalog/                   # 机器索引（ygg graph build，随核心包部署）
-│   │   └── tag-inverted/
-│   └── schemas/
+├── yggforge-core/               [Git] 可部署真源
+│   ├── config/                  [Git] 默认配置，不含本机秘密
+│   ├── schemas/                 [Git] 配置和知识元数据校验
+│   ├── knowledge/               [Git] 知识真源
+│   │   ├── rules/               稳定约定
+│   │   ├── templates/           可复用模板
+│   │   ├── lessons/inbox/       记忆草稿与待晋升经验
+│   │   ├── reference/           参考资料
+│   │   ├── decisions/           已记录决策
+│   │   └── sources/             来源材料及提炼结果
+│   ├── plugins/                 [Git] Ygg 技能、hooks、规则和 MCP 定义
+│   ├── profiles/                [Git] Codex、Cursor 等工具投影
+│   ├── scripts/                 [Git] CLI 路由、存储、检索、部署和策略
+│   ├── graph/                   [Git] 标签图及随核心部署的机器索引
+│   │   ├── tag-graph.yaml       标签关系权威
+│   │   ├── tag-synonyms.yaml    同义词与标准标签
+│   │   ├── catalog/             条目机器索引，可重建但进 Git
+│   │   └── tag-inverted/        标签倒排索引，可重建但进 Git
+│   └── roles/                   [规划·Git] 角色真源，尚未创建实际角色
+│       ├── finance-expert/
+│       │   ├── role.yaml        固定身份、职责与技能选择
+│       │   ├── AGENTS.md         工作约定
+│       │   ├── IDENTITY.md       身份与个性
+│       │   ├── skills/           独有技能、共享技能引用
+│       │   └── memories/         [规划·私有 Git] 长期记忆
+│       │       ├── notes/        事实、偏好、纠错与案例记录
+│       │       └── summary.md    启动用短摘要
+│       └── legal-expert/         [规划·私有 Git] 法律专家
+│           ├── role.yaml
+│           ├── AGENTS.md
+│           ├── IDENTITY.md
+│           ├── skills/
+│           └── memories/
+│               ├── notes/
+│               └── summary.md
 │
-├── yggforge-generated/                # GENERATED_ROOT · 可再生产物
-│   ├── deploy-manifests/
-│   ├── rendered/
-│   ├── imports/
-│   ├── indexes/
-│   │   ├── by-tag/                    # 可选 ygg index
-│   │   └── tag-suggestions.json       # ygg tag --suggest（可再生）
-│   └── scratch/                       # .tmp-*、实验解压等
+├── yggforge-runtime/            [本地] README/.gitignore 例外进 Git
+│   ├── memory/raw/              一般 Ygg 原始记忆
+│   ├── memory/index/            一般记忆派生索引
+│   ├── privacy/                 本地隐私与发布判定记录
+│   ├── backups/                 本地运行备份
+│   ├── hosts/<host-id>/          Windows 与 WSL 各自的机器状态
+│   │   ├── config/              本机路径、工具连接与 local 配置
+│   │   └── cache/               hooks、会话触发结果等缓存
+│   └── roles/<role-id>/          [规划·本地] sessions/index/cache/locks
 │
-└── yggforge-runtime/                  # RUNTIME_ROOT · 本机状态
-    ├── memory/raw/
-    ├── memory/index/
-    ├── cache/
-    └── config/                        # *.local.json 本机覆盖
+└── yggforge-generated/          [本地] README/.gitignore 例外进 Git
+    └── hosts/<host-id>/          各宿主的可再生产物
+        ├── deploy-manifests/    部署收据与 import 基线
+        ├── rendered/           渲染入口
+        ├── imports/            导入复核暂存
+        ├── indexes/            可选导览与标签建议
+        ├── scratch/            临时分析文件
+        └── roles/<role-id>/     [规划·本地] 角色入口和技能投影
 ```
 
 ---
+
+
+角色目录是后续设计示意，当前角色功能尚未实现。长期角色记忆与临时运行数据分层；角色记忆固定排除公共框架发布，见 [发布边界](publication-boundary.md)。
 
 ## 3. 部署后布局（Agent 家目录）
 
@@ -172,11 +207,11 @@ flowchart LR
 | `ygg dream` | `yggforge-runtime/memory/index/` |
 | `ygg promote` | `yggforge-core/knowledge/...` |
 | `ygg graph build` | `yggforge-core/graph/{catalog,tag-inverted}/` |
-| `ygg tag --suggest` | `yggforge-generated/indexes/tag-suggestions.json` |
-| `ygg index` | `yggforge-generated/indexes/by-tag/` |
-| `ygg deploy` | Agent 家目录 + `yggforge-generated/deploy-manifests/` |
-| 本机路径覆盖 | `yggforge-runtime/config/*.local.json` |
-| 临时实验 / `.tmp-*` | `yggforge-generated/scratch/` |
+| `ygg tag --suggest` | `yggforge-generated/hosts/<host-id>/indexes/tag-suggestions.json` |
+| `ygg index` | `yggforge-generated/hosts/<host-id>/indexes/by-tag/` |
+| `ygg deploy` | Agent 家目录 + `yggforge-generated/hosts/<host-id>/deploy-manifests/` |
+| 本机路径覆盖 | `yggforge-runtime/hosts/<host-id>/config/*.local.json` |
+| 临时实验 / `.tmp-*` | `yggforge-generated/hosts/<host-id>/scratch/` |
 
 ---
 
@@ -188,6 +223,8 @@ flowchart LR
 - `GENERATED_ROOT` → `yggforge-generated/`
 - `RUNTIME_ROOT` → `yggforge-runtime/`
 - `REPO_ROOT` → 含 `.git` 的仓库根
+- `HOST_RUNTIME_ROOT` → `yggforge-runtime/hosts/<host-id>/`，本机配置与缓存
+- `HOST_GENERATED_ROOT` → `yggforge-generated/hosts/<host-id>/`，部署、导入与渲染产物
 
 相关文档：
 

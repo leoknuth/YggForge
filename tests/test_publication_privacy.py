@@ -87,6 +87,80 @@ class PublicationPrivacyTests(unittest.TestCase):
             self.assertEqual(evaluate_file(self.write(name, "{}"), self.root).reason, "EXCLUDED_PATH")
         self.assertEqual(select_files(self.root), [])
 
+    def test_role_memories_are_private_in_repo_and_core_layouts(self):
+        names = [
+            "yggforge-core/roles/finance-expert/memories/facts.md",
+            "roles/legal-expert/memories/cases/note.json",
+            "roles/finance-expert/memories/asset.png",
+            "Roles/finance-expert/Memories/note.md",
+        ]
+        for name in names:
+            with self.subTest(path=name):
+                path = self.write(name, "{}")
+                self.assertEqual(evaluate_file(path, self.root).reason, "ROLE_MEMORY")
+                decisions = dict(select_files(self.root, [path], approved_items=[name], framework_paths=[Path(name).parent]))
+                self.assertEqual(decisions[name].reason, "ROLE_MEMORY")
+                self.assertFalse(decisions[name].eligible)
+        config = self.write("yggforge-core/roles/finance-expert/AGENTS.md", "角色工作约定")
+        self.assertTrue(evaluate_file(config, self.root).allowed)
+        nearby = self.write("roles/finance-expert/memories-template/guide.md", "模板说明")
+        self.assertTrue(evaluate_file(nearby, self.root).allowed)
+        document = self.write("docs/roles/finance-expert/memories/guide.md", "目录示例")
+        self.assertTrue(evaluate_file(document, self.root).allowed)
+
+    def test_canonical_role_memory_cannot_change_publication_root(self):
+        name = "yggforge-core/roles/finance-expert/memories/cases/note.md"
+        memory = self.write(name, "长期经验")
+        roots = [self.root, self.root / "yggforge-core", memory.parents[2], memory.parents[1], memory.parent]
+        for root in roots:
+            with self.subTest(root=root):
+                relative = memory.relative_to(root).as_posix()
+                self.assertEqual(evaluate_file(memory, root).reason, "ROLE_MEMORY")
+                decisions = dict(select_files(root, approved_items=[relative], framework_paths=[memory.parent]))
+                self.assertEqual(decisions[relative].reason, "ROLE_MEMORY")
+
+    def test_role_memory_approval_by_id_cannot_override_private_path(self):
+        name = "yggforge-core/roles/legal-expert/memories/practice.md"
+        self.write(name, "---\nid: memory-id\n---\n长期经验\n")
+        for framework in ([], [Path("yggforge-core/roles")]):
+            decisions = dict(select_files(self.root, approved_items=["memory-id", name], framework_paths=framework))
+            self.assertEqual(decisions[name].reason, "ROLE_MEMORY")
+            self.assertFalse(decisions[name].allowed)
+
+    def test_role_memory_alias_cannot_escape_private_path(self):
+        memory = self.write("yggforge-core/roles/finance-expert/memories/note.md", "长期经验")
+        alias = self.root / "framework/alias.md"
+        alias.parent.mkdir()
+        try:
+            alias.symlink_to(memory)
+        except OSError:
+            self.skipTest("当前平台无创建符号链接权限")
+        self.assertEqual(evaluate_file(alias, self.root).reason, "ROLE_MEMORY")
+        decisions = dict(select_files(self.root, [alias], approved_items=["framework/alias.md"], framework_paths=[Path("framework")]))
+        self.assertEqual(decisions["framework/alias.md"].reason, "ROLE_MEMORY")
+
+    def test_role_memory_assets_inherit_privacy_without_tags(self):
+        self.write("assets/plot.png", b"asset")
+        self.write("assets/linked.png", b"asset")
+        self.write("assets/data.json", '{"assets":["linked.png"]}')
+        self.write("yggforge-core/roles/finance-expert/memories/note.md", "![图](../../../../assets/plot.png)\n[data](../../../../assets/data.json)\n")
+        decisions = dict(select_files(self.root, [Path("assets/plot.png"), Path("assets/linked.png"), Path("assets/data.json")], approved_items=["assets/plot.png", "assets/linked.png", "assets/data.json"], framework_paths=[Path("assets")]))
+        for name in ("assets/plot.png", "assets/linked.png", "assets/data.json"):
+            self.assertEqual(decisions[name].reason, "INHERITED_PRIVACY")
+            self.assertFalse(decisions[name].allowed)
+
+    def test_role_memory_link_protects_its_external_asset(self):
+        asset = self.write("assets/record.json", '{"content":"长期经验"}')
+        alias = self.root / "roles/finance-expert/memories/record.json"
+        alias.parent.mkdir(parents=True)
+        try:
+            alias.symlink_to(asset)
+        except OSError:
+            self.skipTest("当前平台无创建符号链接权限")
+        self.assertEqual(evaluate_file(alias, self.root).reason, "ROLE_MEMORY")
+        decisions = dict(select_files(self.root, [asset], approved_items=["assets/record.json"], framework_paths=[Path("assets")]))
+        self.assertEqual(decisions["assets/record.json"].reason, "INHERITED_PRIVACY")
+
     def test_symlink_outside_and_runtime_alias_cannot_escape(self):
         with tempfile.TemporaryDirectory() as outside:
             external = Path(outside) / "secret.md"

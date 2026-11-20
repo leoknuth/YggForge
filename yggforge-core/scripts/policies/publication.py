@@ -193,12 +193,32 @@ def json_tags(value: object) -> Set[str]:
     return tags
 
 
+def _is_role_memory_path(relative: Path) -> bool:
+    """角色长期记忆是私有数据，支持以仓库根或核心包根检查。"""
+    parts = tuple(part.casefold() for part in relative.parts)
+    if parts and parts[0] == "yggforge-core":
+        parts = parts[1:]
+    return len(parts) >= 3 and parts[0] == "roles" and parts[2] == "memories"
+
+
+def _is_canonical_role_memory_path(path: Path) -> bool:
+    """发布根缩到角色子目录时，仍识别既定核心包里的角色记忆。"""
+    parts = tuple(part.casefold() for part in path.parts)
+    return any(
+        parts[index] == "yggforge-core"
+        and parts[index + 1] == "roles"
+        and parts[index + 3] == "memories"
+        for index in range(len(parts) - 3)
+    )
+
+
 def _checked_path(path: Path, root: Path) -> Tuple[Optional[Path], Optional[str]]:
-    """同时检查词法路径和真实路径，防止链接从其它位置绕进 runtime 或越界。"""
+    """同时检查词法与真实路径，阻止越界及运行数据、角色记忆的链接绕行。"""
     root = root.resolve()
     candidate = path if path.is_absolute() else root / path
     try:
-        relative = candidate.relative_to(root)
+        lexical = Path(os.path.normpath(str(candidate)))
+        relative = lexical.relative_to(root)
         resolved = candidate.resolve()
         real_relative = resolved.relative_to(root)
     except (OSError, RuntimeError, ValueError):
@@ -209,6 +229,14 @@ def _checked_path(path: Path, root: Path) -> Tuple[Optional[Path], Optional[str]
         return None, "SYMLINK_DIRECTORY" if candidate.is_symlink() else "NOT_FILE"
     if not candidate.is_file():
         return None, "NOT_FILE"
+    if (
+        _is_role_memory_path(relative)
+        or _is_role_memory_path(real_relative)
+        or _is_canonical_role_memory_path(lexical)
+        or _is_canonical_role_memory_path(resolved)
+    ):
+        # 保留已验证真实路径，仅供发布选择器提取私有附件引用，拒绝发布本文件。
+        return resolved, "ROLE_MEMORY"
     return resolved, None
 
 
@@ -397,8 +425,13 @@ def select_files(
     entry_ids = {}
     for path in contexts:
         checked, reason = _checked_path(path, root)
-        if reason:
+        if reason and reason != "ROLE_MEMORY":
             continue
+        if reason == "ROLE_MEMORY" and not (
+            _is_role_memory_path(checked.relative_to(root)) or _is_canonical_role_memory_path(checked)
+        ):
+            # 角色目录内的文件链接指向外部附件时，附件的其它别名同样保持私有。
+            private_assets.add(checked)
         try:
             text, value, _tags = _document(checked)
             entry_ids[path] = _entry_id(text, value)
@@ -419,7 +452,7 @@ def select_files(
                     }
                 except (OSError, UnicodeError, ValueError):
                     pass
-        if inspections[path].reason in {"PRIVACY_TAG", "SENSITIVE_MARKER", "METADATA_INVALID", "FORBIDDEN_TERM"}:
+        if inspections[path].reason in {"PRIVACY_TAG", "SENSITIVE_MARKER", "METADATA_INVALID", "FORBIDDEN_TERM", "ROLE_MEMORY"}:
             private_assets.update(references[checked])
     # 私密附件若引用其它附件，继续传播；不会向未引用的条目广播标签。
     pending = list(private_assets)
