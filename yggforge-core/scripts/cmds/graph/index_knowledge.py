@@ -22,10 +22,10 @@ from typing import Dict, List, Optional, Tuple
 
 from backends.file_backend import FileMemoryBackend  # noqa: E402
 
-from lib.repo_paths import CORE_ROOT, GENERATED_ROOT, REPO_ROOT as GIT_ROOT, ensure_layout
+from lib.repo_paths import CORE_ROOT, HOST_GENERATED_ROOT, REPO_ROOT as GIT_ROOT, ensure_layout
 
 CONTENT_ROOT = CORE_ROOT
-INDEX_ROOT = GENERATED_ROOT / "indexes"
+INDEX_ROOT = HOST_GENERATED_ROOT / "indexes"
 BY_TAG_ROOT = INDEX_ROOT / "by-tag"
 EXPORT_META_JSON = INDEX_ROOT / "export-meta.json"
 EXPORT_META_MD = INDEX_ROOT / "EXPORT_META.md"

@@ -71,7 +71,8 @@ class SortedShardStore(object):
             path = self.root_dir / filename
             lines = ["{0}\t{1}\n".format(key, payload) for key, payload in shard_items]
             text = "".join(lines)
-            path.write_text(text, encoding="utf-8")
+            with path.open("w", encoding="utf-8", newline="\n") as handle:
+                handle.write(text)
             size = path.stat().st_size
             total_bytes += size
             files_meta.append(
@@ -98,7 +99,7 @@ class SortedShardStore(object):
         }
         if source_digest is not None:
             manifest["source_digest"] = source_digest
-        with self.manifest_path.open("w", encoding="utf-8") as handle:
+        with self.manifest_path.open("w", encoding="utf-8", newline="\n") as handle:
             json.dump(manifest, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
         self._manifest = manifest

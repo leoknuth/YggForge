@@ -73,13 +73,13 @@ class DeploySpec(object):
 class DeployError(RuntimeError):
     pass
 
-from lib.repo_paths import CORE_ROOT, GENERATED_ROOT, REPO_ROOT, RUNTIME_ROOT, resolve_core_source  # noqa: E402
+from lib.repo_paths import CORE_ROOT, GENERATED_ROOT, REPO_ROOT, RUNTIME_ROOT, resolve_core_source, HOST_ID, HOST_RUNTIME_ROOT, HOST_GENERATED_ROOT  # noqa: E402
 
 CONFIG_PATH = CORE_ROOT / "config" / "deploy.defaults.json"
-LOCAL_CONFIG_PATH = RUNTIME_ROOT / "config" / "deploy.local.json"
-MANIFEST_ROOT = GENERATED_ROOT / "deploy-manifests"
-RENDER_ROOT = GENERATED_ROOT / "rendered"
-IMPORT_ROOT = GENERATED_ROOT / "imports"
+LOCAL_CONFIG_PATH = HOST_RUNTIME_ROOT / "config" / "deploy.local.json"
+MANIFEST_ROOT = HOST_GENERATED_ROOT / "deploy-manifests"
+RENDER_ROOT = HOST_GENERATED_ROOT / "rendered"
+IMPORT_ROOT = HOST_GENERATED_ROOT / "imports"
 
 from lib.common import deep_merge_dict, load_json
 
@@ -207,7 +207,10 @@ def read_manifest(target: str) -> Optional[Dict[str, Any]]:
     path = manifest_path(target)
     if not path.exists():
         return None
-    return load_json(path)
+    manifest = load_json(path)
+    if manifest.get("host_id") != HOST_ID:
+        raise DeployError("Deployment manifest belongs to another host; redeploy this target on the current host.")
+    return manifest
 
 def write_manifest(
     target: str,
@@ -220,6 +223,7 @@ def write_manifest(
 ) -> None:
     ensure_generated_layout()
     payload = {
+        "host_id": HOST_ID,
         "target": target,
         "profile": spec.profile,
         "action": action,
@@ -227,7 +231,7 @@ def write_manifest(
         "scope": scope,
         "project_root": normalized_path(project_root) if project_root else None,
         "requires_import": any(item.get("actual_mode", mode) != "link" for item in operations),
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": datetime.now().strftime("%Y%m%d %H:%M:%S"),
         "mappings": operations,
     }
     path = manifest_path(target)
@@ -260,12 +264,21 @@ def normalized_path(path: Path) -> str:
     """规范化清单身份；Windows 路径比较忽略大小写。"""
     return os.path.normcase(str(path.resolve()))
 
+
+def is_import_review(path: Path) -> bool:
+    """复核区只接受当前宿主的导入暂存根。"""
+    try:
+        path.resolve().relative_to(IMPORT_ROOT.resolve())
+        return True
+    except ValueError:
+        return False
+
 def assert_import_allowed(destination: Path) -> None:
     rel = repo_relative(destination)
     if rel is None:
         raise DeployError("Import destination is outside the repository: {0}".format(destination))
     rel_text = rel.as_posix()
-    if rel_text == "yggforge-generated/imports" or rel_text.startswith("yggforge-generated/imports/"):
+    if is_import_review(destination):
         return
     for prefix in ALLOWED_IMPORT_PREFIXES:
         if rel_text == prefix.rstrip("/") or rel_text.startswith(prefix):
@@ -305,7 +318,7 @@ def build_rendered_text(source: Path, target_name: str, mapping_name: str, origi
         "- target: `{0}`".format(target_name),
         "- mapping: `{0}`".format(mapping_name),
         "- canonical source: `{0}`".format(rel_text),
-        "- generated at: `{0}`".format(datetime.now().isoformat(timespec="seconds")),
+        "- generated at: `{0}`".format(datetime.now().strftime("%Y%m%d %H:%M:%S")),
         "",
         "Edit the canonical source file instead of editing this rendered file directly.",
         "",
@@ -335,12 +348,11 @@ def render_source(source: Path, target_name: str, mapping_name: str) -> Path:
     return rendered_path
 
 def backup_target(target: Path) -> None:
-    """把将被覆盖的目标移到 yggforge-runtime/deploy-backups/<ts>/。"""
+    """把将被覆盖的目标移到本宿主的 deploy-backups/<ts>/。"""
     if not target.exists() and not target.is_symlink():
         return
-    from lib.repo_paths import RUNTIME_ROOT
     ts = time.strftime("%Y%m%d-%H%M%S")
-    backup_dir = RUNTIME_ROOT / "deploy-backups" / ts
+    backup_dir = HOST_RUNTIME_ROOT / "deploy-backups" / ts
     backup_dir.mkdir(parents=True, exist_ok=True)
     dest = backup_dir / target.name
     if dest.exists():
@@ -571,8 +583,7 @@ def prepare_import_plan(target: Path, destination: Path, baseline: Optional[Dict
     current = snapshot_path(destination)
     if baseline is None:
         # 旧清单没有基线时只能安全接纳完全一致的内容；render 仅写复核区。
-        rel = repo_relative(destination)
-        review = rel is not None and rel.as_posix().startswith("yggforge-generated/imports/")
+        review = is_import_review(destination)
         if not review and incoming != current:
             raise DeployError("No deployment baseline for {0}; save target edits and redeploy before import.".format(destination))
         desired = dict(incoming)
@@ -759,6 +770,9 @@ def show_status(target_name: str, spec: DeploySpec, scope: str = "user", project
     print("[{0}] scope={1}".format(target_name, scope))
     print("  profile         : {0}".format(spec.profile))
     print("  enabled         : {0}".format(spec.enabled))
+    print("  host_id         : {0}".format(HOST_ID))
+    print("  host_runtime    : {0}".format(HOST_RUNTIME_ROOT))
+    print("  manifest_path   : {0}".format(manifest_path(mkey)))
     if last_manifest:
         print("  last_action     : {0}".format(last_manifest.get("action")))
         print("  last_mode       : {0}".format(last_manifest.get("mode")))

@@ -23,7 +23,7 @@ import subprocess
 import time
 from typing import List, Tuple
 
-from lib.repo_paths import CORE_ROOT, GENERATED_ROOT, REPO_ROOT, RUNTIME_ROOT
+from lib.repo_paths import CORE_ROOT, GENERATED_ROOT, REPO_ROOT, RUNTIME_ROOT, HOST_RUNTIME_ROOT
 
 # ANSI 颜色（Windows 10+ 支持；alpine 支持）
 _RED = "\033[31m"
@@ -207,9 +207,9 @@ def _check_hooks() -> List[Tuple[str, str]]:
 def _check_last_trigger() -> List[Tuple[str, str]]:
     """只诊断 v2 会话缓存的结构/新鲜度，不声称已匹配 doctor 当前会话或消息。"""
     results: List[Tuple[str, str]] = []
-    directory = RUNTIME_ROOT / "cache" / "triggers"
-    expected_root = RUNTIME_ROOT.resolve() / "cache" / "triggers"
-    if (RUNTIME_ROOT / "cache" / "last_trigger.json").exists():
+    directory = HOST_RUNTIME_ROOT / "cache" / "triggers"
+    expected_root = HOST_RUNTIME_ROOT.resolve() / "cache" / "triggers"
+    if (HOST_RUNTIME_ROOT / "cache" / "last_trigger.json").exists():
         results.append(("yellow", "发现旧全局 last_trigger.json（不消费；使用 --read-trigger 校验本轮消息）"))
     try:
         directory.resolve().relative_to(expected_root)

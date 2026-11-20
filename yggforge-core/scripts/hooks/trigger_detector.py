@@ -142,7 +142,7 @@ def _load_chat_trigger_default() -> Optional[bool]:
     """读 behavior 配置的 features.default_trigger_on_chat。
 
     返回 None 表示读不到配置（按原行为，省 token）；True/False 为显式开关。
-    覆盖顺序：behavior.defaults.yaml ← yggforge-runtime/config/behavior.local.yaml。
+    覆盖顺序：behavior.defaults.yaml ← yggforge-runtime/hosts/<host>/config/behavior.local.yaml。
     """
     try:
         # 本文件在 hooks/；库模块在 scripts/ 根

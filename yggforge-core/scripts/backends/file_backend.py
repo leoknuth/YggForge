@@ -345,7 +345,7 @@ when_to_read: []
 
         now = datetime.now()
         timestamp = now.strftime("%Y%m%d-%H%M%S-%f")
-        recorded_at = now.strftime("%Y-%m-%d")
+        recorded_at = now.strftime("%Y%m%d")
         filename = "{0}-{1}.md".format(timestamp, self.slugify(slug_source)[:80])
 
         self.raw_root.mkdir(parents=True, exist_ok=True)

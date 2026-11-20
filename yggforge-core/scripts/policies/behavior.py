@@ -4,7 +4,7 @@
 
 配置（YAML，可注释）：
 - yggforge-core/config/behavior.defaults.yaml
-- yggforge-runtime/config/behavior.local.yaml
+- yggforge-runtime/hosts/<host>/config/behavior.local.yaml
 
 模式约定（配置值）：
 - ask   — 每次询问；交互 [y]=仅本次，[a]lways allow → 持久化为 allow
@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from lib.repo_paths import CORE_ROOT, RUNTIME_ROOT, ensure_layout
+from lib.repo_paths import CORE_ROOT, HOST_RUNTIME_ROOT, ensure_layout
 
 try:
     import yaml  # type: ignore
@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 DEFAULTS_PATH = CORE_ROOT / "config" / "behavior.defaults.yaml"
-LOCAL_PATH = RUNTIME_ROOT / "config" / "behavior.local.yaml"
+LOCAL_PATH = HOST_RUNTIME_ROOT / "config" / "behavior.local.yaml"
 
 VALID_MODES = ("ask", "allow", "deny", "warn", "audit", "dry_run")
 
@@ -155,7 +155,7 @@ def load_behavior_config() -> Dict[str, Any]:
     cfg = _load_yaml(DEFAULTS_PATH)
     local = _load_yaml(LOCAL_PATH)
     # 兼容：若只有 JSON 本地覆盖
-    local_json = RUNTIME_ROOT / "config" / "behavior.local.json"
+    local_json = HOST_RUNTIME_ROOT / "config" / "behavior.local.json"
     if local_json.exists():
         with local_json.open("r", encoding="utf-8-sig") as handle:
             j = json.load(handle)

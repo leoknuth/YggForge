@@ -15,7 +15,7 @@ from lib.front_matter import as_str_list
 from lib.repo_paths import CORE_ROOT
 
 SCHEMA_PATH = CORE_ROOT / "schemas" / "knowledge-item.schema.yaml"
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DATE_RE = re.compile(r"^(?:\d{8}|\d{4}-\d{2}-\d{2})$")
 
 KNOWN_TYPES = (
     "rule",
@@ -341,7 +341,7 @@ def validate_front_matter(
         if not val or val.startswith("<") or "YYYY" in val:
             continue
         if not DATE_RE.match(val):
-            note("error", "字段 '{0}' 日期格式应为 YYYY-MM-DD，实际 '{1}'".format(key, val))
+            note("error", "字段 '{0}' 日期格式应为 YYYYMMDD，实际 '{1}'".format(key, val))
 
     if metadata.get("always_apply") in (True, "true", "True"):
         mode = str(metadata.get("projection_mode") or "").strip().lower()

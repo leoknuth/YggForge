@@ -36,12 +36,13 @@ def run_git(repo: Path, args: List[str]) -> str:
     return result.stdout.strip()
 
 from lib.common import deep_merge_dict, load_json
+from lib.repo_paths import host_runtime_root
 
 def load_policy(repo: Path) -> Dict[str, Any]:
     # 默认值来自核心包，本机覆盖与 cli.runtime 一致放在 runtime。
     core_config = repo / "yggforge-core" / "config"
     defaults_path = core_config / "sync.defaults.json"
-    local_path = repo / "yggforge-runtime" / "config" / "sync.local.json"
+    local_path = host_runtime_root(repo) / "config" / "sync.local.json"
 
     policy: Dict[str, Any] = {}
     if defaults_path.exists():

@@ -26,6 +26,7 @@
 - [7. 统一部署脚本](#7-统一部署脚本)
 - [8. 路径配置](#8-路径配置)
 - [9. 推荐的本地配置分层](#9-推荐的本地配置分层)
+- [9.1 共享真源与宿主状态](#91-共享真源与宿主状态)
 - [10. 为什么部署层要独立](#10-为什么部署层要独立)
 
 ---
@@ -297,7 +298,7 @@ Windows 无符号链接特权时：目录回退为 junction；单文件尝试 sy
 如果目标位置后续又被修改，则：
 
 - 不会直接回写 canonical source
-- `import` 会把修改导入到 `yggforge-generated/imports/` 供人工复核
+- `import` 会把修改导入到 `yggforge-generated/hosts/<host-id>/imports/` 供人工复核
 - 复核后再决定是否晋升回 canonical source
 
 这也是 `ygg sync <target>` / `ygg push <target>` 默认可安全执行的原因：
@@ -402,7 +403,7 @@ ygg deploy link --scope project openclaw      # → <repo>/.openclaw/AGENTS.md
 强制检索钩子（Cursor 专有，仅 cursor target 有）：
 
 - `~/.cursor/hooks.json`（**用户级** User Hooks）注册 `beforeSubmitPrompt` + `sessionStart`
-- `~/.cursor/hooks/`（junction → `yggforge-core/profiles/cursor/hooks/`）含两个脚本：`ygg_pre_submit.py`（每条消息提交前跑 `trigger_detector.py` 并落盘 `last_trigger.json`）、`ygg_session_protocol.py`（会话开始尝试注入协议；失败时以 `.mdc` / `AGENTS.md` / `last_trigger.json` 为准）
+- `~/.cursor/hooks/`（junction → `yggforge-core/profiles/cursor/hooks/`）含两个脚本：`ygg_pre_submit.py`（每条消息提交前检测，并在本宿主的 `cache/triggers/` 中按会话与消息保存结果）、`ygg_session_protocol.py`（会话开始尝试注入协议；消费缓存前必须校验本轮身份、原文和时效；无匹配结果时按 `.mdc` / `AGENTS.md` 或重新检测）
 - 平台特定命令：`hooks.json` 真源按平台分两份——Windows 用 `profiles/cursor/hooks.windows.json`（命令 `py -X utf8 hooks/...`；`py` 在 `C:\Windows\py.exe`，`-X utf8` 避免 Python 按系统 GBK 再误读一层）。这是对 Cursor Windows hook stdin 编码 bug 的配套措施（[Forum #159259](https://forum.cursor.com/t/hook-stdin-pipe-double-encodes-non-ascii-on-non-utf-8-windows/159259) 等；完整链接与 `transcript_path` 主绕过见 `profiles/cursor/hooks/ygg_pre_submit.py` 模块 docstring、`hooks/README.md`、`docs/guide/install.md`）。Linux 用 `profiles/cursor/hooks.json`（命令 `python3 hooks/...`）。`deploy.defaults.json` 的 `hooks_config` mapping 用 `sources` 字段按平台选真源。不用裸 `python`，因其常在用户级 PATH（如 miniconda3），GUI 可能继承不到
 - `hooks.json` 是 copy（Windows 跨盘单文件无法 symlink/junction），改它需编辑真源后重新部署；`hooks/` 是 junction，改脚本天然回流仓库
 - 部署后必须重启 Cursor：Cursor 只在启动时加载 `hooks.json`，会话中途新建/修改的 hooks.json 不会自动生效（文件监视器对新建文件常不触发）。`ygg deploy link cursor` 后若 hook 不触发，先重启 Cursor
@@ -496,7 +497,33 @@ ygg deploy link --scope project openclaw      # → <repo>/.openclaw/AGENTS.md
 例如：
 
 - `yggforge-core/config/deploy.defaults.json`
-- `yggforge-runtime/config/deploy.local.json`
+- `yggforge-runtime/hosts/<host-id>/config/deploy.local.json`
+
+### 9.1 共享真源与宿主状态
+
+Windows、WSL 或其他环境可以链接到同一核心包。共同知识与原始记忆保持一份，机器状态按宿主分别保存：
+
+```text
+<REPO_ROOT>/
+  yggforge-core/                        共同代码与知识
+  yggforge-runtime/
+    memory/                            共同记忆
+    hosts/<host-id>/
+      config/                          本宿主 local 配置
+      cache/                           本宿主触发与行为缓存
+  yggforge-generated/hosts/<host-id>/
+    deploy-manifests/                   本宿主部署收据
+    rendered/                          本宿主渲染结果
+    imports/                           本宿主导入复核
+    indexes/                           本宿主可选导览
+    scratch/                           本宿主暂存
+```
+
+宿主身份由平台、用户和机器或 WSL 发行版确定。需要固定测试或启动身份时，可设置 `YGG_HOST_ID`，其值只允许字母、数字、连字符与下划线。该值仅区分机器状态，不提供访问权限隔离。
+
+`deploy`、`status`、`import` 和同步前的导入读取同一宿主的收据。收据还记录 `host_id`，归属不符时要求在当前宿主重新部署；不读取旧全局目录或另一宿主的收据。配置和缓存同样不做跨宿主回退。
+
+迁移已有部署时，先将有效 local 配置放入各自宿主目录，再为每个平台重新生成部署收据。普通文件入口或 copy 目标中的有效修改须先整合到真源。共同记忆根仍为 `yggforge-runtime/memory/`，不会因宿主分区而分成多份。
 
 ## 10. 为什么部署层要独立
 

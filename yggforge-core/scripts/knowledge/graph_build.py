@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from lib.common import deep_merge_dict, normalize_tag
-from lib.repo_paths import CORE_ROOT, RUNTIME_ROOT
+from lib.repo_paths import CORE_ROOT, HOST_RUNTIME_ROOT
 
 from knowledge.graph_models import GraphError, KnowledgeEntry
 from knowledge.graph_scan import scan_knowledge_entries
@@ -20,7 +20,7 @@ CONTENT_ROOT = CORE_ROOT
 # 历史 API 名：此处指内容根（yggforge-core），非 git 仓库根。真 git 根见 lib.repo_paths.REPO_ROOT。
 REPO_ROOT = CONTENT_ROOT
 DEFAULT_CONFIG_PATH = CORE_ROOT / "config" / "graph.defaults.json"
-LOCAL_CONFIG_PATH = RUNTIME_ROOT / "config" / "graph.local.json"
+LOCAL_CONFIG_PATH = HOST_RUNTIME_ROOT / "config" / "graph.local.json"
 
 
 def load_graph_config(repo_root: Optional[Path] = None) -> Dict[str, Any]:
@@ -28,7 +28,7 @@ def load_graph_config(repo_root: Optional[Path] = None) -> Dict[str, Any]:
     root = repo_root or CORE_ROOT
     config: Dict[str, Any] = {}
     defaults = root / "config" / "graph.defaults.json"
-    local = RUNTIME_ROOT / "config" / "graph.local.json"
+    local = HOST_RUNTIME_ROOT / "config" / "graph.local.json"
     if defaults.exists():
         with defaults.open("r", encoding="utf-8-sig") as handle:
             config = json.load(handle)

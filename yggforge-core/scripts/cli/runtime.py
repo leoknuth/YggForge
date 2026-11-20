@@ -11,14 +11,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lib.common import deep_merge_dict, load_json
 from lib.leaf_scripts import resolve_leaf
-from lib.repo_paths import CORE_ROOT, GENERATED_ROOT, REPO_ROOT, RUNTIME_ROOT
+from lib.repo_paths import CORE_ROOT, REPO_ROOT, HOST_ID, HOST_RUNTIME_ROOT, HOST_GENERATED_ROOT
 from cli.errors import YggError
 
 # runtime.py 在 scripts/cli/，上两层是 scripts/
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
 SYNC_POLICY_PATH = CORE_ROOT / "config" / "sync.defaults.json"
-LOCAL_SYNC_POLICY_PATH = RUNTIME_ROOT / "config" / "sync.local.json"
-MANIFEST_ROOT = GENERATED_ROOT / "deploy-manifests"
+LOCAL_SYNC_POLICY_PATH = HOST_RUNTIME_ROOT / "config" / "sync.local.json"
+MANIFEST_ROOT = HOST_GENERATED_ROOT / "deploy-manifests"
 KNOWN_TARGETS = ("cursor", "codex", "opencode", "claude", "openclaw")
 
 
@@ -35,7 +35,10 @@ def read_deploy_manifest(target: str) -> Optional[Dict[str, Any]]:
     path = MANIFEST_ROOT / "{0}.json".format(target)
     if not path.exists():
         return None
-    return load_json(path)
+    manifest = load_json(path)
+    if manifest.get("host_id") != HOST_ID:
+        raise YggError("Deployment manifest belongs to another host; redeploy this target on the current host.")
+    return manifest
 
 
 def run_python(script_name: str, args: List[str]) -> int:

@@ -21,7 +21,7 @@ from cli.runtime import (
     run_python,
     _pop_force_flags,
 )
-from lib.repo_paths import CORE_ROOT, RUNTIME_ROOT
+from lib.repo_paths import CORE_ROOT, HOST_RUNTIME_ROOT
 
 
 def route_explicit(action: str, rest: List[str]) -> int:
@@ -535,7 +535,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
             "features": features,
             "channel": cfg.get("channel") or {},
             "defaults_path": str(CORE_ROOT / "config" / "behavior.defaults.yaml"),
-            "local_path": str(RUNTIME_ROOT / "config" / "behavior.local.yaml"),
+            "local_path": str(HOST_RUNTIME_ROOT / "config" / "behavior.local.yaml"),
             "channels_path": str(CORE_ROOT / "config" / "channels.yaml"),
         }
         if as_json:

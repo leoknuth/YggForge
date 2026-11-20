@@ -93,17 +93,18 @@ class HookProtocolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             core = Path(td) / "yggforge-core"
             paths = types.ModuleType("lib.repo_paths")
-            paths.RUNTIME_ROOT = Path(td) / "runtime"
-            for event in ({"conversation_id": "A"}, {}):
-                with patch.object(session, "_bootstrap_core", return_value=core), patch.object(session, "_read_stdin", return_value=json.dumps(event)), patch.dict(sys.modules, {"lib.repo_paths": paths}), patch("builtins.print") as output:
-                    self.assertEqual(session.main(), 0)
-                    protocol = json.loads(output.call_args.args[0])["additional_context"]
-                    self.assertIn(str(core / "scripts/ygg.sh"), protocol)
-                    self.assertNotIn("用 Read 工具读取", protocol)
-                    if event:
-                        self.assertIn("--read-trigger", protocol)
-                    else:
-                        self.assertIn("宿主未提供会话 ID", protocol)
+            paths.HOST_RUNTIME_ROOT = Path(td) / "runtime/hosts/test-host"
+            for platform, entry in (("linux", "ygg.sh"), ("win32", "ygg.ps1")):
+                for event in ({"conversation_id": "A"}, {}):
+                    with patch.object(session, "_bootstrap_core", return_value=core), patch.object(session, "_read_stdin", return_value=json.dumps(event)), patch.object(session.sys, "platform", platform), patch.dict(sys.modules, {"lib.repo_paths": paths}), patch("builtins.print") as output:
+                        self.assertEqual(session.main(), 0)
+                        protocol = json.loads(output.call_args.args[0])["additional_context"]
+                        self.assertIn(str(core / "scripts" / entry), protocol)
+                        self.assertNotIn("用 Read 工具读取", protocol)
+                        if event:
+                            self.assertIn("--read-trigger", protocol)
+                        else:
+                            self.assertIn("宿主未提供会话 ID", protocol)
 
     def test_real_hook_pipeline_and_validator_work_from_other_cwd(self):
         with tempfile.TemporaryDirectory() as td:
@@ -114,7 +115,7 @@ class HookProtocolTests(unittest.TestCase):
             (core / "scripts/lib/__init__.py").touch()
             shutil.copyfile(REPO / "yggforge-core/scripts/lib/repo_paths.py", core / "scripts/lib/repo_paths.py")
             (core / "scripts/hooks/trigger_detector.py").write_text('import json, os\np=os.environ["YGG_TRIGGER_PROMPT"]\nprint(json.dumps({"action":"remember" if p.startswith("记住") else "skip", "should_trigger":p.startswith("记住")}))\n', encoding="utf-8")
-            env = dict(os.environ, YGGFORGE_CORE_ROOT=str(core), YGG_TEST_HOME=str(root), PYTHONDONTWRITEBYTECODE="1")
+            env = dict(os.environ, YGGFORGE_CORE_ROOT=str(core), YGG_TEST_HOME=str(root), YGG_HOST_ID="test-host", PYTHONDONTWRITEBYTECODE="1")
             # 限定 heartbeat/debug 到临时用户目录，不改真实部署。
             runner = 'import os,sys; from pathlib import Path; Path.home=classmethod(lambda cls:Path(os.environ["YGG_TEST_HOME"])); sys.path.insert(0,' + repr(str(HOOKS)) + '); import ygg_pre_submit; raise SystemExit(ygg_pre_submit.main())'
             prompt = "记住" + "长输入" * 5000
@@ -122,8 +123,9 @@ class HookProtocolTests(unittest.TestCase):
                 proc = subprocess.run([sys.executable, "-c", runner], input=json.dumps({"conversation_id": cid, "message_id": mid, "prompt": text}, ensure_ascii=False).encode(), capture_output=True, cwd=root, env=env, timeout=10)
                 self.assertEqual(proc.returncode, 0, proc.stderr.decode())
                 self.assertTrue(json.loads(proc.stdout)["continue"])
-            self.assertEqual(hook.read_trigger(root / "yggforge-runtime", "A", prompt=prompt)["action"], "remember")
-            self.assertEqual(hook.read_trigger(root / "yggforge-runtime", "B", prompt="你好")["action"], "skip")
+            host_runtime = root / "yggforge-runtime/hosts/test-host"
+            self.assertEqual(hook.read_trigger(host_runtime, "A", prompt=prompt)["action"], "remember")
+            self.assertEqual(hook.read_trigger(host_runtime, "B", prompt="你好")["action"], "skip")
             self.assertFalse((root / "yggforge-runtime/cache/last_trigger.json").exists())
             validated = subprocess.run([sys.executable, "-c", runner, "--read-trigger", "--conversation-id", "A", "--message-id", "a", "--prompt-from-env"], env=dict(env, YGG_TRIGGER_PROMPT=prompt), cwd=root, capture_output=True, timeout=10)
             self.assertEqual(json.loads(validated.stdout)["validation"], "matched")

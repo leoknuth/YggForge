@@ -18,7 +18,7 @@ class TriggerDoctorTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.now = 1000
-        self.patch = patch.object(doctor, "RUNTIME_ROOT", self.root)
+        self.patch = patch.object(doctor, "HOST_RUNTIME_ROOT", self.root)
         self.patch.start()
         self.addCleanup(self.temporary.cleanup)
         self.addCleanup(self.patch.stop)

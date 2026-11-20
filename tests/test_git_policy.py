@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "yggforge-core/scripts"))
 from cmds.ops.git_risk_check import load_policy
+from lib.repo_paths import host_runtime_root
 
 
 class GitPolicyTests(unittest.TestCase):
@@ -17,7 +18,7 @@ class GitPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="ygg-policy-test-") as temporary:
             repo = Path(temporary)
             core = repo / "yggforge-core/config"
-            runtime = repo / "yggforge-runtime/config"
+            runtime = host_runtime_root(repo) / "config"
             core.mkdir(parents=True)
             runtime.mkdir(parents=True)
             core.joinpath("sync.defaults.json").write_text(json.dumps({

@@ -23,11 +23,11 @@ from typing import Any, Dict
 
 from backends.file_backend import FileMemoryBackend
 from lib.common import deep_merge_dict, load_json
-from lib.repo_paths import CORE_ROOT, RUNTIME_ROOT, ensure_layout
+from lib.repo_paths import CORE_ROOT, RUNTIME_ROOT, ensure_layout, HOST_RUNTIME_ROOT
 
 
 MEMORY_CONFIG_PATH = CORE_ROOT / "config" / "memory.defaults.json"
-LOCAL_MEMORY_CONFIG_PATH = RUNTIME_ROOT / "config" / "memory.local.json"
+LOCAL_MEMORY_CONFIG_PATH = HOST_RUNTIME_ROOT / "config" / "memory.local.json"
 
 
 class MemoryBackendError(RuntimeError):

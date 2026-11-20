@@ -187,12 +187,21 @@ def dump_front_matter_lines(metadata: Dict[str, Any]) -> List[str]:
                         lines.append("  - {0}".format("true" if item else "false"))
                     else:
                         text = str(item)
-                        if any(c in text for c in (":", "#", '"', "\\", "\n", ",", "[", "]")) or text.lower() in ("true", "false", "null", "~"):
+                        if (
+                            any(c in text for c in (":", "#", '"', "\\", "\n", ",", "[", "]"))
+                            or text.lower() in ("true", "false", "null", "~")
+                            or (isinstance(item, str) and text.isdigit())
+                        ):
                             text = json.dumps(text, ensure_ascii=False)
                         lines.append("  - {0}".format(text))
         else:
             text = str(value)
-            if any(c in text for c in (":", "#", '"', "\n", "\\", "[", "]")) or text == "" or text.lower() in ("true", "false", "null", "~"):
+            if (
+                any(c in text for c in (":", "#", '"', "\n", "\\", "[", "]"))
+                or text == ""
+                or text.lower() in ("true", "false", "null", "~")
+                or (isinstance(value, str) and text.isdigit())
+            ):
                 text = json.dumps(text, ensure_ascii=False)
             lines.append("{0}: {1}".format(key, text))
     return lines

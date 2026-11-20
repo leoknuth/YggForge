@@ -91,14 +91,14 @@ def assign_knowledge_id(lines: List[str], destination: Path) -> None:
     update_or_append_scalar(lines, "id", entry_id)
 
 def update_rule_front_matter(lines: List[str], destination: Path) -> None:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y%m%d")
     assign_knowledge_id(lines, destination)
     update_or_append_scalar(lines, "type", "rule")
     update_or_append_scalar(lines, "status", "active")
     update_or_append_scalar(lines, "last_reviewed", today)
 
 def update_template_front_matter(lines: List[str], destination: Path) -> None:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y%m%d")
     title = extract_scalar(lines, "title") or destination.stem
     update_or_append_scalar(lines, "title", title)
     assign_knowledge_id(lines, destination)
@@ -108,21 +108,21 @@ def update_template_front_matter(lines: List[str], destination: Path) -> None:
     update_or_append_scalar(lines, "last_reviewed", today)
 
 def update_lesson_front_matter(lines: List[str], destination: Path) -> None:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y%m%d")
     assign_knowledge_id(lines, destination)
     update_or_append_scalar(lines, "type", "lesson")
     update_or_append_scalar(lines, "status", "active")
     update_or_append_scalar(lines, "last_reviewed", today)
 
 def update_reference_front_matter(lines: List[str], destination: Path) -> None:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y%m%d")
     assign_knowledge_id(lines, destination)
     update_or_append_scalar(lines, "type", "reference")
     update_or_append_scalar(lines, "status", "active")
     update_or_append_scalar(lines, "last_reviewed", today)
 
 def update_decision_front_matter(lines: List[str], destination: Path) -> None:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y%m%d")
     assign_knowledge_id(lines, destination)
     update_or_append_scalar(lines, "type", "decision")
     update_or_append_scalar(lines, "status", "accepted")

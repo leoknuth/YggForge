@@ -563,12 +563,9 @@ def _bootstrap_core() -> Path:
 
 
 def _runtime_root(core_root: Path) -> Path:
-    """复用部署路径定位，验证入口无需依赖调用方的当前目录。"""
-    try:
-        from lib.repo_paths import RUNTIME_ROOT
-        return RUNTIME_ROOT
-    except Exception:
-        return core_root.parent / "yggforge-runtime"
+    """复用本宿主路径，验证入口不读取其它宿主或旧全局缓存。"""
+    from lib.repo_paths import HOST_RUNTIME_ROOT
+    return HOST_RUNTIME_ROOT
 
 
 def _digest(text: str) -> str:
@@ -654,7 +651,11 @@ def main() -> int:
     core_root = _bootstrap_core()
     detector = core_root / "scripts" / "hooks" / "trigger_detector.py"
 
-    runtime_root = _runtime_root(core_root)
+    try:
+        runtime_root = _runtime_root(core_root)
+    except (ImportError, ValueError, OSError):
+        print(json.dumps({"continue": True, "user_message": "[ygg 钩子] 本宿主状态路径不可用，已跳过缓存；请按本次消息重新检测。"}, ensure_ascii=False))
+        return 0
 
     # 二进制读 stdin：对照 Cursor Windows 管道实际字节（#159259 / #142878）
     try:

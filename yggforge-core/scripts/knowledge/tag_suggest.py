@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from lib.common import normalize_tag
-from lib.repo_paths import CORE_ROOT, GENERATED_ROOT
+from lib.repo_paths import CORE_ROOT, HOST_GENERATED_ROOT
 
 from knowledge.graph_build import load_graph_config
 from knowledge.graph_scan import scan_knowledge_entries
@@ -178,10 +178,10 @@ def write_suggestions(
     repo_root: Optional[Path] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Path:
-    """写入可再生产物层（GENERATED_ROOT），不进 CORE graph。"""
-    _ = repo_root  # 扫描仍用 CORE；产出落 GENERATED
+    """写入本宿主的可再生产物层，不进 CORE graph。"""
+    _ = repo_root  # 扫描仍用 CORE；产出按宿主分区。
     scfg = _suggest_cfg(config or load_graph_config(CORE_ROOT))
-    out = GENERATED_ROOT / str(scfg["output"])
+    out = HOST_GENERATED_ROOT / str(scfg["output"])
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out

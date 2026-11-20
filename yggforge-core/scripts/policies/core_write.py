@@ -4,7 +4,7 @@
 
 配置：
 - yggforge-core/config/core_write.defaults.json
-- yggforge-runtime/config/core_write.local.json（可选覆盖）
+- yggforge-runtime/hosts/<host>/config/core_write.local.json（可选覆盖）
 
 模式（canonical）：
 - allow   直接写入
@@ -25,11 +25,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from lib.repo_paths import CORE_ROOT, RUNTIME_ROOT, ensure_layout
+from lib.repo_paths import CORE_ROOT, HOST_RUNTIME_ROOT, ensure_layout
 
 DEFAULTS_PATH = CORE_ROOT / "config" / "core_write.defaults.json"
-LOCAL_PATH = RUNTIME_ROOT / "config" / "core_write.local.json"
-AUDIT_LOG_PATH = RUNTIME_ROOT / "cache" / "core_write_audit.jsonl"
+LOCAL_PATH = HOST_RUNTIME_ROOT / "config" / "core_write.local.json"
+AUDIT_LOG_PATH = HOST_RUNTIME_ROOT / "cache" / "core_write_audit.jsonl"
 
 # 已知操作（文档与校验用；未知操作仍可用，回退 default）
 KNOWN_OPERATIONS = (

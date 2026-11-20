@@ -88,14 +88,14 @@ def main() -> int:
     conversation_id = _event_identity(event, "conversation")
     ygg_cli = None
     try:
-        from lib.repo_paths import RUNTIME_ROOT
-        runtime_root = RUNTIME_ROOT
-    except Exception:
-        runtime_root = core_root.parent / "yggforge-runtime"
+        from lib.repo_paths import HOST_RUNTIME_ROOT
+        runtime_root = HOST_RUNTIME_ROOT
+    except (ImportError, ValueError, OSError):
+        runtime_root = None
     ygg_cli = core_root / "scripts" / ("ygg.ps1" if sys.platform.startswith("win") else "ygg.sh")
 
     validator = core_root / "profiles" / "cursor" / "hooks" / "ygg_pre_submit.py"
-    if conversation_id:
+    if conversation_id and runtime_root is not None:
         cache_file = _trigger_path(runtime_root, conversation_id)
         read_instruction = (
             "本会话 ID 为 {id}。本会话候选缓存为 {cache}。\n"
@@ -104,6 +104,11 @@ def main() -> int:
             "   必须由验证入口返回 validation=matched 才可按 action 路由；它核对会话、消息/原文及 5 分钟时效。"
             "不得直接信任 JSON 文件或旧的 cache/last_trigger.json。\n"
         ).format(id=json.dumps(conversation_id, ensure_ascii=False), cache=cache_file, validator=validator)
+    elif conversation_id:
+        read_instruction = (
+            "本宿主状态路径不可用，不消费持久触发缓存。"
+            "请按本轮消息内化 AGENTS.md 触发规则或重新运行 trigger_detector.py。\n"
+        )
     else:
         read_instruction = (
             "宿主未提供会话 ID，不消费任何持久触发缓存（尤其是旧 last_trigger.json）。"

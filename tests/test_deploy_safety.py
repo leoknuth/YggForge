@@ -40,14 +40,17 @@ class DeploySafetyTests(unittest.TestCase):
                 "CORE_ROOT": self.core, "REPO_ROOT": self.repo,
                 "GENERATED_ROOT": self.repo / "yggforge-generated",
                 "RUNTIME_ROOT": self.repo / "yggforge-runtime",
+                "HOST_ID": "test-host",
+                "HOST_GENERATED_ROOT": self.repo / "yggforge-generated/hosts/test-host",
+                "HOST_RUNTIME_ROOT": self.repo / "yggforge-runtime/hosts/test-host",
             }.items():
                 patcher = mock.patch.object(module, name, value)
                 patcher.start()
                 self.addCleanup(patcher.stop)
         for name, value in {
-            "MANIFEST_ROOT": self.repo / "yggforge-generated/deploy-manifests",
-            "RENDER_ROOT": self.repo / "yggforge-generated/rendered",
-            "IMPORT_ROOT": self.repo / "yggforge-generated/imports",
+            "MANIFEST_ROOT": self.repo / "yggforge-generated/hosts/test-host/deploy-manifests",
+            "RENDER_ROOT": self.repo / "yggforge-generated/hosts/test-host/rendered",
+            "IMPORT_ROOT": self.repo / "yggforge-generated/hosts/test-host/imports",
         }.items():
             patcher = mock.patch.object(deploy, name, value)
             patcher.start()
