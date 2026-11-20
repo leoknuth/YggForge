@@ -44,7 +44,11 @@ class TagManager(object):
         self,
         tag_graph_path: Path = DEFAULT_TAG_GRAPH_PATH,
         synonyms_path: Path = DEFAULT_SYNONYMS_PATH,
+        space=None,
     ) -> None:
+        if space is not None:
+            tag_graph_path = space.graph_root / "tag-graph.yaml"
+            synonyms_path = space.graph_root / "tag-synonyms.yaml"
         self.tag_graph_path = tag_graph_path
         self.synonyms_path = synonyms_path
         self._synonym_map = load_synonym_map(synonyms_path)
@@ -431,11 +435,11 @@ class TagManager(object):
         return sorted(self.existing_tags)
 
 
-def build_propagate_report(tag: str, dry_run: bool = True) -> Dict[str, Any]:
+def build_propagate_report(tag: str, dry_run: bool = True, space=None) -> Dict[str, Any]:
     """为新 tag 生成审查报告：关联 tag 下的条目候选（不自动改文件）。"""
     from knowledge.graph import GraphError, KnowledgeGraphIndex
 
-    tm = TagManager()
+    tm = TagManager(space=space)
     canonical = tm.canonicalize(tag)
     related = set(tm.related_of(canonical))
     if not related:
@@ -448,7 +452,7 @@ def build_propagate_report(tag: str, dry_run: bool = True) -> Dict[str, Any]:
         }
 
     try:
-        index = KnowledgeGraphIndex()
+        index = KnowledgeGraphIndex(space=space)
     except GraphError as exc:
         return {"status": "error", "tag": canonical, "message": str(exc), "candidates": []}
 
@@ -465,7 +469,7 @@ def build_propagate_report(tag: str, dry_run: bool = True) -> Dict[str, Any]:
             entry_tags = set(entry.tags)
             if canonical in entry_tags:
                 continue
-            path = REPO_ROOT / entry.path
+            path = (space.root if space is not None else REPO_ROOT) / entry.path
             content_preview = ""
             if path.exists():
                 text = path.read_text(encoding="utf-8-sig")

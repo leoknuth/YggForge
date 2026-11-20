@@ -198,11 +198,31 @@ when_to_read: []
             for path in root.rglob("*.md"):
                 if path.name == "README.md":
                     continue
+                if not self._entry_path_allowed(path, root):
+                    continue
                 text = path.read_text(encoding="utf-8-sig")
                 metadata, _ = self.parse_front_matter(text)
+                if not self._entry_metadata_allowed(metadata):
+                    continue
                 title = metadata.get("title", "")
                 entries.append((path, title, text.strip()))
         return entries
+
+    def _entry_path_allowed(self, path: Path, root: Path) -> bool:
+        """在读正文前限制真实路径，空间白名单不依赖结果端过滤。"""
+        try:
+            path.resolve().relative_to(root.resolve())
+            space = getattr(self, "space", None)
+            if space is not None and space.allowed_paths is not None:
+                relative = path.resolve().relative_to(space.root.resolve()).as_posix()
+                return space.allows(relative)
+        except ValueError:
+            return False
+        return True
+
+    def _entry_metadata_allowed(self, metadata: Dict[str, Any]) -> bool:
+        """一般后端不附加所有者过滤；角色后端覆盖本方法。"""
+        return True
 
     @staticmethod
     def tokenize_query(query: str) -> List[str]:
@@ -429,12 +449,15 @@ when_to_read: []
         scope: Optional[str] = None,
         agents: Optional[List[str]] = None,
         channels: Optional[List[str]] = None,
+        project_id: Optional[str] = None,
     ) -> bool:
         kind_filters = self.normalize_filter_values(kinds)
         tag_filters = self.normalize_filter_values(tags)
         agent_filters = self.normalize_filter_values(agents)
         channel_filters = self.normalize_filter_values(channels)
         scope_filter = (scope or "").strip().lower()
+        if project_id is not None and str(metadata.get("project_id", "")) not in ("", project_id):
+            return False
 
         if kind_filters and kind.lower() not in kind_filters:
             return False
@@ -471,6 +494,7 @@ when_to_read: []
         agents: Optional[List[str]] = None,
         channels: Optional[List[str]] = None,
         include_inactive: bool = False,
+        project_id: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         query_text = (query or "").strip().lower()
         has_filters = bool(
@@ -479,6 +503,7 @@ when_to_read: []
             or (scope or "").strip()
             or self.normalize_filter_values(agents)
             or self.normalize_filter_values(channels)
+            or project_id is not None
         )
         if not query_text and not has_filters:
             return []
@@ -495,6 +520,8 @@ when_to_read: []
             if not root.exists():
                 continue
             for path in root.rglob("*.md"):
+                if not self._entry_path_allowed(path, root):
+                    continue
                 resolved = path.resolve()
                 if resolved in seen_paths:
                     continue
@@ -506,6 +533,8 @@ when_to_read: []
                     continue
                 text = path.read_text(encoding="utf-8-sig")
                 metadata, body = self.parse_front_matter(text)
+                if not self._entry_metadata_allowed(metadata):
+                    continue
                 entry_kind = str(metadata.get("type") or kind).strip().lower()
                 status = str(metadata.get("status", "")).strip().lower()
                 if entry_kind == "rule" and status != "active" and not include_inactive:
@@ -518,6 +547,7 @@ when_to_read: []
                     scope=scope,
                     agents=agents,
                     channels=channels,
+                    project_id=project_id,
                 ):
                     continue
 
@@ -573,6 +603,9 @@ when_to_read: []
                         "tags": ", ".join(tag_values),
                         "agent": ", ".join(agent_targets),
                         "preview": preview,
+                        "space_id": getattr(getattr(self, "space", None), "space_id", "shared"),
+                        "owner_role": str(metadata.get("owner_role", "")),
+                        "project_id": str(metadata.get("project_id", "")),
                     }
                 )
 

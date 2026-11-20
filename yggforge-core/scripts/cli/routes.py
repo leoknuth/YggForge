@@ -25,6 +25,30 @@ from lib.repo_paths import CORE_ROOT, HOST_RUNTIME_ROOT
 
 
 def route_explicit(action: str, rest: List[str]) -> int:
+    if action in {"role", "task"}:
+        return run_python("role_cli.py" if action == "role" else "task_cli.py", rest)
+    # 角色与知识空间参数先分离，再沿用各命令的正文和生命周期解析。
+    space_options = {
+        "remember": {"--role", "--project", "--confidence", "--update-entry", "--delete-entry"},
+        "recall": {"--role", "--project"},
+        "promote": {"--role"}, "dream": {"--role"},
+        "associate": {"--role", "--space", "--project"},
+        "graph": {"--role", "--space"},
+        "tag": {"--role"},
+    }
+    role_args, remaining = [], []
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in space_options.get(action, set()):
+            if index + 1 >= len(rest) or rest[index + 1].startswith("--"):
+                raise YggError("参数缺少值: " + token)
+            role_args.extend([token, rest[index + 1]])
+            index += 2
+        else:
+            remaining.append(token)
+            index += 1
+    rest = remaining
     if action == "status":
         scope = "user"
         project_root = None
@@ -252,7 +276,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
             else:
                 raise YggError("Unrecognized `ygg dream` token: {0}".format(token))
             idx += 1
-        return run_python("dream.py", args)
+        return run_python("dream.py", args + role_args)
 
     if action == "recall":
         query_tokens: List[str] = []
@@ -329,7 +353,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
             args.append("--json")
         if include_inactive:
             args.append("--include-inactive")
-        return run_python("recall.py", args)
+        return run_python("recall.py", args + role_args)
 
     if action == "remember":
         title: Optional[str] = None
@@ -400,6 +424,8 @@ def route_explicit(action: str, rest: List[str]) -> int:
                 note_tokens.append(token)
             idx += 1
 
+        if not note_tokens and any(flag in role_args for flag in ("--delete-entry", "--update-entry")):
+            return run_python("remember.py", role_args)
         if not note_tokens:
             raise YggError("`ygg remember` requires note text.")
         if force_yes and force_no:
@@ -430,7 +456,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
             args.append("--no")
         if as_json:
             args.append("--json")
-        return run_python("remember.py", args)
+        return run_python("remember.py", args + role_args)
 
     if action == "promote":
         destination: Optional[str] = None
@@ -515,7 +541,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
             args.append("--no")
         if as_json:
             args.append("--json")
-        return run_python("promote.py", args)
+        return run_python("promote.py", args + role_args)
 
     if action == "behavior":
         # ygg behavior [--json]  列出当前生效的 mode / dream / features
@@ -593,7 +619,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
                 args.append(token)
             else:
                 raise YggError("Unrecognized `ygg graph` token: {0}".format(token))
-        return run_python("graph_index.py", args)
+        return run_python("graph_index.py", args + role_args)
 
     if action == "project":
         # ygg project mdc [--check|--write]
@@ -645,7 +671,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
             idx += 1
         if "--tag" not in args:
             raise YggError("`ygg associate` requires at least one --tag.")
-        return run_python("associate.py", args)
+        return run_python("associate.py", args + role_args)
 
     if action == "tag":
         args = []
@@ -709,7 +735,7 @@ def route_explicit(action: str, rest: List[str]) -> int:
                 "--authority-writeback, --propagate, --suggest, or --language."
             )
         if "--language" in args:
-            return run_python("tag_language.py", ["--json"] if "--json" in args else [])
-        return run_python("tag_cli.py", args)
+            return run_python("tag_language.py", (["--json"] if "--json" in args else []) + role_args)
+        return run_python("tag_cli.py", args + role_args)
 
     raise YggError("Unknown explicit action: {0}".format(action))

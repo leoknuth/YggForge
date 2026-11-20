@@ -5,7 +5,7 @@
 from __future__ import print_function
 
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 
 from lib.common import normalize_tag
 from lib.front_matter import as_str_list, parse_front_matter, source_text_fingerprint
@@ -57,14 +57,15 @@ def _depth_under(rel_posix: str, prefix: str) -> int:
 SCAN_ROOTS = ("knowledge", "plugins")
 
 
-def should_skip_path(path: Path, repo_root: Path) -> bool:
+def should_skip_path(path: Path, repo_root: Path, include_inbox: bool = False) -> bool:
     """判断扫描时是否跳过该文件。"""
     try:
         rel = path.resolve().relative_to(repo_root.resolve())
     except ValueError:
         return True
     parts = [part.lower() for part in rel.parts]
-    if any(part in SKIP_DIR_NAMES for part in parts):
+    skip_names = SKIP_DIR_NAMES - ({"inbox"} if include_inbox else set())
+    if any(part in skip_names for part in parts):
         return True
     name = path.name.lower()
     if name == "readme.md":
@@ -78,21 +79,27 @@ def scan_knowledge_entries(
     repo_root: Path,
     max_depth: int,
     include_inactive: bool = False,
+    content_roots: Optional[Sequence[str]] = None,
+    allowed_paths: Optional[Sequence[str]] = None,
+    include_inbox: bool = False,
+    space_id: str = "shared",
 ) -> Tuple[List[KnowledgeEntry], List[str]]:
     """扫描 knowledge/ 与 plugins/ 下正式条目，返回条目列表与警告。"""
     entries: List[KnowledgeEntry] = []
     warnings: List[str] = []
     seen_ids: Set[str] = set()
 
-    for root_name in SCAN_ROOTS:
+    for root_name in content_roots or SCAN_ROOTS:
         content_root = repo_root / root_name
         if not content_root.exists():
             continue
         prefix = root_name + "/"
         for path in sorted(content_root.rglob("*.md")):
-            if should_skip_path(path, repo_root):
+            if should_skip_path(path, repo_root, include_inbox=include_inbox):
                 continue
             rel = path.resolve().relative_to(repo_root.resolve()).as_posix()
+            if allowed_paths is not None and not any(rel == p.rstrip("/") or rel.startswith(p.rstrip("/") + "/") for p in allowed_paths):
+                continue
             depth = _depth_under(rel, prefix)
             if depth < 0:
                 continue
@@ -136,6 +143,7 @@ def scan_knowledge_entries(
                     confidence=str(metadata.get("confidence", "")).strip().lower(),
                     last_reviewed=str(metadata.get("last_reviewed", "")).strip(),
                     source_fingerprint=source_text_fingerprint(path.read_bytes()),
+                    space_id=space_id,
                 )
             )
     return entries, warnings

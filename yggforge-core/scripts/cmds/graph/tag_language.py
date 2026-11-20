@@ -27,14 +27,20 @@ import argparse
 import json
 
 from knowledge.tag_manager import load_tag_language  # noqa: E402
+from knowledge.spaces import role_space
+from knowledge.graph_models import GraphError
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Print configured tag language (en/zh)."
     )
     parser.add_argument("--json", action="store_true", help="JSON 输出")
+    parser.add_argument("--role", default="", help="读取已注册角色自己的标签语言")
     args = parser.parse_args()
-    lang = load_tag_language()
+    try:
+        lang = load_tag_language(role_space(args.role).graph_root / "tag-synonyms.yaml") if args.role else load_tag_language()
+    except GraphError as exc:
+        parser.error(str(exc))
     if args.json:
         json.dump({"language": lang}, sys.stdout, ensure_ascii=False)
         sys.stdout.write("\n")

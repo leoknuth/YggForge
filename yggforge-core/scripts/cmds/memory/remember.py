@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""写入运行时记忆，并可选镜像到 lessons/inbox。
+"""写入一般观察记忆或角色长期 notes，并保持晋升空间一致。
 
 由 ``ygg remember`` 调用。经 ``backends.get_memory_backend()`` 落盘到
-``yggforge-runtime/memory``；站立意图可自动触发 promote。
+``yggforge-runtime/memory``；--role 则写自身 notes/lessons/inbox。
+可信用户的站立意图可触发同一空间的 promote，模型输出默认保留草稿。
 """
 
 from pathlib import Path
@@ -90,26 +91,30 @@ def _slug_name(title: str) -> str:
     from uuid import uuid4
     return "standing-{0}.md".format(uuid4().hex[:12])
 
-def _auto_promote_standing(draft_path: str, title: str, force: Optional[str], as_json: bool) -> dict:
-    """remember 成功后，对站立偏好自动 promote --auto --to rule --standing。"""
+def _auto_promote_standing(draft_path: str, title: str, force: Optional[str], as_json: bool, role_id: Optional[str] = None, to_kind: str = "rule") -> dict:
+    """保持空间执行站立规则晋升，或执行用户显式要求的角色 lesson 晋升。"""
     args = [
         sys.executable,
+        "-X",
+        "utf8",
         str(SCRIPT_DIR / "cmds" / "pipeline" / "promote.py"),
         "--to",
-        "rule",
+        to_kind,
         "--entry",
         draft_path,
-        "--auto",
-        "--standing",
         "--name",
         _slug_name(title),
     ]
+    if to_kind == "rule":
+        args.extend(["--auto", "--standing"])
     if force == "allow":
         args.append("--yes")
     elif force == "deny":
         args.append("--no")
     if as_json:
         args.append("--json")
+    if role_id:
+        args.extend(["--role", role_id])
     try:
         proc = subprocess.run(
             args,
@@ -137,7 +142,12 @@ def _auto_promote_standing(draft_path: str, title: str, force: Optional[str], as
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create a draft remember entry inside YggForge.")
-    parser.add_argument("--note", required=True, help="The correction, preference, or lesson to remember.")
+    parser.add_argument("--note", default="", help="The correction, preference, or lesson to remember.")
+    parser.add_argument("--role", default=None, help="固定角色 ID；长期记忆写入自身 notes。")
+    parser.add_argument("--project", default="", help="角色记忆所属项目 ID。")
+    parser.add_argument("--confidence", choices=["high", "medium", "low"], default="medium", help="角色记录确定程度。")
+    parser.add_argument("--update-entry", default=None, help="更新本角色已有条目 ID 或 notes 相对路径。")
+    parser.add_argument("--delete-entry", default=None, help="删除本角色已有条目 ID 或 notes 相对路径。")
     parser.add_argument("--title", default=None, help="Optional explicit original title (never overwritten).")
     parser.add_argument(
         "--title-refined",
@@ -163,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["inbox", "lesson", "rule"],
         default="inbox",
         help="目标层级：inbox=仅草稿（默认）；rule=站立偏好，写入 inbox 后自动晋升 rules；"
-        "lesson=预留（当前仍只写 inbox，可用 promote --auto --objective）。",
+        "lesson=角色记忆写入后晋升 lesson；一般记忆仍保留 inbox。",
     )
     parser.add_argument(
         "--standing",
@@ -185,7 +195,11 @@ def main() -> int:
     args = parser.parse_args()
 
     note = args.note.strip()
-    if not note:
+    if args.update_entry and args.delete_entry:
+        parser.error("更新和删除不能同时使用。")
+    if (args.update_entry or args.delete_entry) and not args.role:
+        parser.error("已有条目的更新/删除必须指定角色。")
+    if not note and not args.delete_entry:
         raise SystemExit("`remember` requires a non-empty note.")
 
     force = _force_from_args(args)
@@ -224,7 +238,7 @@ def main() -> int:
 
     d_rec = authorize(
         "memory.record_observation",
-        "写入 runtime 观察记忆: {0}".format((args.title or note)[:80]),
+        "写入{0}记忆: {1}".format("角色长期" if args.role else " runtime 观察", (args.title or note)[:80]),
         force=force,
     )
     decisions["record_observation"] = d_rec
@@ -242,10 +256,8 @@ def main() -> int:
                 print("behavior_local  : {0}".format(d_rec["persist_path"]))
         return 2
 
-    d_mir = authorize(
-        "memory.mirror_to_lessons_inbox",
-        "镜像到 knowledge/lessons/inbox",
-        force=force,
+    d_mir = {"allowed": True, "reason": "role_inbox_is_primary"} if args.role else authorize(
+        "memory.mirror_to_lessons_inbox", "镜像到 knowledge/lessons/inbox", force=force,
     )
     decisions["mirror_to_lessons_inbox"] = d_mir
     # deny/dry_run 镜像：仍可写 raw，只是不镜像
@@ -266,7 +278,17 @@ def main() -> int:
             print("remember_reason : standing requires lessons inbox mirror")
         return 2
 
-    backend = get_memory_backend()
+    backend = get_memory_backend(role_id=args.role) if args.role else get_memory_backend()
+    if args.delete_entry or args.update_entry:
+        result = backend.delete_entry(args.delete_entry, force=force) if args.delete_entry else backend.update_entry(args.update_entry, note, title=args.title, force=force)
+        if args.json:
+            json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
+            sys.stdout.write("\n")
+        else:
+            print("remember_state  : {0}".format(result["status"]))
+            print("remember_path   : {0}".format(result["path"]))
+        return 1 if result.get("memory_refresh", {}).get("status") == "pending_error" else 0
+    role_options = {"project_id": args.project, "confidence": args.confidence} if args.role else {}
     result = backend.record_observation(
         note=note,
         title=args.title,
@@ -278,32 +300,36 @@ def main() -> int:
         mirror_to_inbox=mirror,
         channel=args.channel,
         force=force,
+        **role_options,
     )
     result["behavior"] = decisions
     result["standing"] = standing
 
     promote_info = None
     draft = result.get("lesson_draft_path") or ""
-    if standing and draft and result.get("status") == "recorded":
+    promote_kind = "rule" if standing else "lesson" if args.role and args.as_kind == "lesson" else ""
+    if promote_kind and draft and result.get("status") == "recorded":
         promote_info = _auto_promote_standing(
             draft_path=draft,
             title=result.get("title_refined") or result.get("title") or note[:40],
             force=force,
             as_json=True,
+            role_id=args.role,
+            to_kind=promote_kind,
         )
         result["promote"] = promote_info
         promoted_items = (promote_info.get("result") or {}).get("results") or []
         if promote_info.get("status") == "ok" and promoted_items and all(
             item.get("write") == "ok" for item in promoted_items
         ):
-            result["status"] = "recorded_and_promoted_rule"
+            result["status"] = "recorded_and_promoted_" + promote_kind
         else:
             result["status"] = "recorded_promote_pending"
 
     if args.json:
         json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
-        return 0 if result.get("status") != "denied" else 2
+        return 1 if result.get("memory_refresh", {}).get("status") == "pending_error" else 0 if result.get("status") != "denied" else 2
 
     print("remember_raw    : {0}".format(result.get("raw_path", "")))
     if result.get("lesson_draft_path"):
@@ -331,7 +357,7 @@ def main() -> int:
                 d_rec.get("persist_path") or d_mir.get("persist_path")
             )
         )
-    return 0
+    return 1 if result.get("memory_refresh", {}).get("status") == "pending_error" else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

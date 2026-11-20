@@ -31,6 +31,7 @@ from knowledge.graph import (  # noqa: E402
     scan_knowledge_entries,
 )
 from knowledge.graph_build import check_indexes
+from knowledge.spaces import role_space
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build or check YggForge knowledge graph indexes.")
@@ -49,16 +50,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="只扫描打印，不写分片")
     parser.add_argument("--json", action="store_true", help="Emit JSON for Agent consumption.")
+    parser.add_argument("--role", default="", help="构建或校验已注册角色自己的图")
     return parser
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    config = load_graph_config()
+    if args.role and args.with_by_tag and not args.skip_by_tag:
+        parser.error("角色图暂不支持 --with-by-tag；此组合不会构建或导出。")
+    try:
+        space = role_space(args.role) if args.role else None
+    except GraphError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    config = space.config if space else load_graph_config()
+    root = space.root if space else REPO_ROOT
     max_depth = int(config.get("max_path_depth_under_knowledge", 5))
 
     if args.dry_run:
-        entries, warnings = scan_knowledge_entries(REPO_ROOT, max_depth=max_depth)
+        entries, warnings = scan_knowledge_entries(root, max_depth=max_depth,
+            content_roots=config.get("content_roots"), allowed_paths=config.get("allowed_paths"),
+            include_inbox=bool(config.get("include_inbox", False)), space_id=str(config.get("space_id", "shared")))
         if args.json:
             json.dump(
                 {
@@ -79,7 +91,7 @@ def main() -> int:
         return 1 if (args.check and warnings) else 0
 
     try:
-        result = build_indexes(config=config) if args.build else check_indexes(config=config)
+        result = build_indexes(repo_root=root, config=config) if args.build else check_indexes(repo_root=root, config=config)
     except GraphError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -97,6 +109,7 @@ def main() -> int:
 
     if args.json:
         payload = {
+            "space_id": str(config.get("space_id", "shared")),
             "entries": result["entries"],
             "tags": result["tags"],
             "warnings": result["warnings"],

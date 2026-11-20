@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""记忆整理报告：重复扫描、晋升候选、consolidation 提示。
+"""记忆整理报告：重复扫描、晋升候选与显式角色图/摘要刷新。
 
 由 ``ygg dream`` 调用。默认只报告不自动改写；写操作仍走 behavior 门禁。
 """
@@ -34,12 +34,18 @@ def is_lessons_inbox_path(path: Path) -> bool:
     try:
         knowledge_idx = parts.index("knowledge")
     except ValueError:
-        return False
+        try:
+            knowledge_idx = parts.index("notes")
+        except ValueError:
+            return False
+        return parts[knowledge_idx : knowledge_idx + 3] == ["notes", "lessons", "inbox"]
     return parts[knowledge_idx : knowledge_idx + 3] == ["knowledge", "lessons", "inbox"]
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Consolidate runtime memory into a reviewable dream report.")
     parser.add_argument("--scan", action="store_true", help="Read-only scan; do not write a report file.")
+    parser.add_argument("--role", default=None, help="仅整理该角色的记忆。")
+    parser.add_argument("--refresh", action="store_true", help="更新角色图与摘要。")
     parser.add_argument("--limit", type=int, default=None, help="Maximum duplicate/candidate items to print per section.")
     parser.add_argument("--yes", action="store_true", help="本次强制 allow（覆盖 behavior ask）")
     parser.add_argument("--no", action="store_true", help="本次强制 deny")
@@ -84,6 +90,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.yes and args.no:
         raise SystemExit("--yes 与 --no 不能同时使用")
+    if args.scan and args.refresh:
+        parser.error("--scan 只读，不能与 --refresh 同时使用。")
 
     force: Optional[str] = None
     if args.yes:
@@ -120,7 +128,13 @@ def main() -> int:
 
     limit = args.limit if args.limit is not None else int(settings.get("max_items_per_section") or 10)
 
-    backend = get_memory_backend()
+    backend = get_memory_backend(role_id=args.role) if args.role else get_memory_backend()
+    refreshed = None
+    if args.refresh:
+        if not args.role:
+            parser.error("--refresh 必须指定角色。")
+        from backends.role_memory import refresh_role_memory
+        refreshed = refresh_role_memory(backend.space)
     entries = backend.collect_existing_entries()
 
     duplicates: List[Dict[str, str]] = []
@@ -191,6 +205,8 @@ def main() -> int:
 
     if args.json:
         payload = {
+            "role_id": args.role,
+            "memory_refresh": refreshed,
             "scan": True,
             "entries": len(entries),
             "duplicates": duplicates,

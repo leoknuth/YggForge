@@ -31,6 +31,9 @@ recommended_when_active:
 # 公共字段（所有 type）
 common:
   id: {type: string}
+  space_id: {type: string}           # 知识空间归属，不用于鉴权
+  owner_role: {type: string}         # 角色所有者，不替代可信运行身份
+  project_id: {type: string}         # 项目适用范围
   title: {type: string}
   title_refined: {type: string}
   type:

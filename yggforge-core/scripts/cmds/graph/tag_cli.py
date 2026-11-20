@@ -17,6 +17,9 @@ import argparse
 import json
 
 from knowledge.tag_manager import TagManager, build_propagate_report  # noqa: E402
+from knowledge.spaces import role_space
+from knowledge.space_lock import graph_lock
+from knowledge.graph_models import GraphError
 
 def _force_from_args(args: argparse.Namespace):
     flags = [
@@ -78,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="配合 --suggest：经 tag_suggest_apply 闸门把建议边合并进 tag-graph.yaml",
     )
     parser.add_argument("--json", action="store_true", help="JSON 输出")
+    parser.add_argument("--role", default="", help="管理已注册角色自己的标签图")
     parser.add_argument("--yes", action="store_true", help="本次强制 allow（直接写入）")
     parser.add_argument("--no", action="store_true", help="本次强制 deny（拒绝写入）")
     parser.add_argument("--dry-run", action="store_true", help="本次强制 dry_run（只预览不写）")
@@ -91,7 +95,7 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
         return 2
-    tm = TagManager()
+    tm = None if args.role else TagManager()
 
     if args.apply and not args.suggest:
         parser.error("--apply 必须与 --suggest 一起使用")
@@ -112,6 +116,13 @@ def main() -> int:
             "请恰好指定一个动作：--list / --add / --relate / --set-weight / "
             "--authority-writeback / --propagate / --suggest"
         )
+
+    if args.role:
+        try:
+            return _run_role(args, force)
+        except (GraphError, ValueError, RuntimeError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
 
     if args.suggest:
         from knowledge.tag_suggest import apply_suggestions, compute_suggestions, write_suggestions
@@ -291,6 +302,48 @@ def main() -> int:
         return 0 if report.get("status") != "error" else 1
 
     return 1
+
+
+def _run_role(args, force) -> int:
+    """所有角色标签操作使用本角色路径和锁，变更后同步其图与摘要。"""
+    space = role_space(args.role)
+    with graph_lock(space.root, space.config):
+        path = space.graph_root / "tag-graph.yaml"
+        before = path.read_bytes() if path.exists() else None
+        tm = TagManager(space=space)
+        if args.list:
+            tags = tm.list_tags()
+            result = {"status": "ok", "count": len(tags), "tags": tags, "relations": tm.tag_relations()}
+        elif args.add:
+            result = tm.add_tags(args.add, force=force)
+        elif args.relate:
+            result = tm.add_relation(*args.relate, weight=1.0 if args.weight is None else args.weight, force=force)
+        elif args.set_weight:
+            if args.weight is None:
+                raise ValueError("--set-weight 需要 --weight")
+            result = tm.set_relation_weight(*args.set_weight, weight=args.weight, force=force)
+        elif args.authority_writeback:
+            if args.weight is None:
+                raise ValueError("--authority-writeback 需要 --weight")
+            result = tm.writeback_authority_weight(*args.authority_writeback, weight=args.weight, force=force)
+        elif args.propagate:
+            result = build_propagate_report(args.propagate, space=space)
+        else:
+            from knowledge.tag_suggest import apply_suggestions, compute_suggestions, write_suggestions
+            payload = compute_suggestions(space=space)
+            out = write_suggestions(payload, space=space) if force not in {"deny", "dry_run"} else None
+            result = {"status": "ok", "suggest": payload, "suggestions_file": str(out) if out else None}
+            if args.apply:
+                applied = apply_suggestions(payload.get("suggestions", []), force=force, space=space)
+                result.update({"status": applied["status"], "apply": applied})
+        after = path.read_bytes() if path.exists() else None
+        if before != after:
+            from backends.role_memory import refresh_role_memory
+            result["refresh"] = refresh_role_memory(space)
+        result["space_id"] = space.space_id
+        json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
+        sys.stdout.write("\n")
+        return 2 if result.get("status") == "denied" else 1 if result.get("status") in {"error", "missing"} else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from lib.common import normalize_tag
-from lib.repo_paths import CORE_ROOT, HOST_GENERATED_ROOT
+from lib.repo_paths import CORE_ROOT, HOST_GENERATED_ROOT, host_generated_root
 
 from knowledge.graph_build import load_graph_config
 from knowledge.graph_scan import scan_knowledge_entries
@@ -56,15 +56,18 @@ def _ppmi_to_weight(ppmi: float, w_min: float, w_max: float, tau: float) -> floa
 def compute_suggestions(
     repo_root: Optional[Path] = None,
     config: Optional[Dict[str, Any]] = None,
+    space=None,
 ) -> Dict[str, Any]:
     """扫描 knowledge+plugins，生成 PPMI 建议边。"""
-    root = repo_root or CORE_ROOT
-    cfg = config or load_graph_config(root)
+    root = space.root if space is not None else repo_root or CORE_ROOT
+    cfg = space.config if space is not None else config or load_graph_config(root)
     scfg = _suggest_cfg(cfg)
     max_depth = int(cfg.get("max_path_depth_under_knowledge", 5))
 
-    synonym_map = load_synonym_map(DEFAULT_SYNONYMS_PATH)
-    entries, _warnings = scan_knowledge_entries(root, max_depth=max_depth)
+    synonym_map = load_synonym_map(space.graph_root / "tag-synonyms.yaml" if space is not None else DEFAULT_SYNONYMS_PATH)
+    entries, _warnings = scan_knowledge_entries(root, max_depth=max_depth,
+        content_roots=cfg.get("content_roots"), allowed_paths=cfg.get("allowed_paths"),
+        include_inbox=bool(cfg.get("include_inbox", False)), space_id=str(cfg.get("space_id", "shared")))
 
     tag_doc_count: Counter = Counter()
     pair_count: Counter = Counter()
@@ -155,6 +158,7 @@ def compute_suggestions(
 
     return {
         "version": 1,
+        "space_id": str(cfg.get("space_id", "shared")),
         "generated_at": _utcnow_iso(),
         "n_entries": len(entries),
         "n_docs_with_tags": n_docs,
@@ -177,13 +181,19 @@ def write_suggestions(
     payload: Dict[str, Any],
     repo_root: Optional[Path] = None,
     config: Optional[Dict[str, Any]] = None,
+    space=None,
 ) -> Path:
     """写入本宿主的可再生产物层，不进 CORE graph。"""
     _ = repo_root  # 扫描仍用 CORE；产出按宿主分区。
-    scfg = _suggest_cfg(config or load_graph_config(CORE_ROOT))
-    out = HOST_GENERATED_ROOT / str(scfg["output"])
+    scfg = _suggest_cfg(space.config if space is not None else config or load_graph_config(CORE_ROOT))
+    base = host_generated_root(space.root.parents[3]) / "roles" / space.owner_role if space is not None and space.owner_role else HOST_GENERATED_ROOT
+    relative = Path(str(scfg["output"]))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("建议输出只能使用本宿主目录内的相对路径。")
+    out = base / relative
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with out.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return out
 
 
@@ -191,13 +201,14 @@ def apply_suggestions(
     suggestions: Sequence[Dict[str, Any]],
     force: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    space=None,
 ) -> Dict[str, Any]:
     """将建议边写入权威 tag-graph（经 tag_suggest_apply 闸门）。"""
     from knowledge.tag_manager import TagManager
 
-    scfg = _suggest_cfg(config)
+    scfg = _suggest_cfg(space.config if space is not None else config)
     floor = float(scfg["apply_floor"])
-    tm = TagManager()
+    tm = TagManager(space=space)
     applied = []
     skipped = []
     denied = None

@@ -24,6 +24,8 @@ from cli.intent import infer_intent
 from cli.routes import route_explicit
 
 EXPLICIT_ACTIONS = {
+    "role",
+    "task",
     "status",
     "deploy",
     "import",

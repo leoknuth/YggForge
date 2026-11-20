@@ -22,6 +22,7 @@ import argparse
 import json
 
 from knowledge.graph import GraphError, KnowledgeGraphIndex  # noqa: E402
+from knowledge.spaces import associate_payload, role_space, shared_space_for_role
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -41,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--limit", type=int, default=10, help="最多返回多少条（默认 10）")
     parser.add_argument("--include-inactive", action="store_true", help="显式查看索引中的非生效规则")
+    parser.add_argument("--role", default="", help="指定已注册角色，默认查询其自身空间")
+    parser.add_argument("--space", choices=["shared", "role", "dual"], default=None, help="选择共享、角色或双路查询；角色共享范围由管理者限制")
     parser.add_argument(
         "--type",
         action="append",
@@ -65,6 +68,28 @@ def main() -> int:
         parser.error("至少提供一个 --tag 作为种子")
     if args.limit < 0:
         parser.error("--limit 不能为负数")
+
+    mode = args.space or ("role" if args.role else "shared")
+    if mode in ("role", "dual") and not args.role:
+        parser.error("角色或双路查询需要 --role")
+    if args.role:
+        try:
+            kwargs = dict(hop=args.hop, include_entry_related=not args.no_entry_related,
+                          limit=args.limit, types=args.type or None, include_inactive=args.include_inactive)
+            if mode == "dual":
+                shared = associate_payload(shared_space_for_role(args.role), args.tag, **kwargs)
+                own = associate_payload(role_space(args.role), args.tag, **kwargs)
+                payload = {"role_id": args.role, "shared_hits": shared["hits"], "role_hits": own["hits"],
+                           "meta": {"shared": shared["meta"], "role": own["meta"]}}
+            else:
+                space = role_space(args.role) if mode == "role" else shared_space_for_role(args.role)
+                payload = associate_payload(space, args.tag, **kwargs)
+            json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
+            sys.stdout.write("\n")
+            return 0
+        except (GraphError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
 
     try:
         index = KnowledgeGraphIndex()
@@ -99,6 +124,7 @@ def main() -> int:
             "hits": [
                 {
                     "id": hit.entry.id,
+                    "space_id": hit.entry.space_id,
                     "path": hit.entry.path,
                     "type": hit.entry.kind,
                     "title": hit.entry.title,

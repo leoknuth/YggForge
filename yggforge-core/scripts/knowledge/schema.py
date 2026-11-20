@@ -224,6 +224,8 @@ def reset_schema_cache() -> None:
 
 def infer_type_from_path(rel_posix: str) -> str:
     """路径缺省推断 type（写入时应显式写 type）。"""
+    if rel_posix.startswith("notes/"):
+        rel_posix = "knowledge/" + rel_posix[len("notes/"):]
     if rel_posix.startswith("knowledge/rules/"):
         return "rule"
     if rel_posix.startswith("knowledge/templates/"):

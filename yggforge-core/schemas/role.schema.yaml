@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YggForge role.yaml",
+  "description": "角色配置契约。记忆空间由注册表固定解析，配置中的路径不能扩大运行权限。",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "revision",
+    "description",
+    "entry",
+    "identity",
+    "skills",
+    "shared_paths",
+    "retrieval",
+    "memory"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "maxLength": 80
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entry": {
+      "const": "AGENTS.md"
+    },
+    "identity": {
+      "const": "IDENTITY.md"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "shared_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "retrieval": {
+      "type": "object",
+      "properties": {
+        "shared_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50
+        },
+        "role_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50
+        },
+        "max_chars": {
+          "type": "integer",
+          "minimum": 512,
+          "maximum": 200000,
+          "description": "每路检索正文的字符预算；摘要、角色入口和技能另行限定"
+        }
+      },
+      "required": [
+        "shared_limit",
+        "role_limit",
+        "max_chars"
+      ],
+      "additionalProperties": false
+    },
+    "memory": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "const": "memories/summary.md"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "graph": {
+      "type": "object",
+      "description": "仅允许图查询权重与存储参数，不能改变角色图目录",
+      "properties": {
+        "default_hop": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entry_related_hops": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_tag_nodes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "weight": {
+          "type": "object"
+        },
+        "storage": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

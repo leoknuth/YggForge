@@ -1,0 +1,9 @@
+{
+  "task_id": "example-financing-prepayment-followup",
+  "prompt": "按示例方法说明提前还款条款如何影响融资成本口径。法律专家先列出需要从真实合同核对的条件，金融专家读取法律前序结果后说明复算步骤。没有合同和数值时不虚构具体结果。",
+  "project_id": "example-financing",
+  "tags": ["agent", "financing", "prepayment"],
+  "roles": ["finance-expert", "legal-expert"],
+  "dependencies": {"finance-expert": ["legal-expert"]},
+  "files": []
+}

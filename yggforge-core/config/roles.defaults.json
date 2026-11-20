@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "git_storage": {
+    "enabled": false
+  },
+  "allowed_shared_paths": [
+    "knowledge/rules/agent-coding-discipline.md",
+    "knowledge/rules/compatibility-defaults.md",
+    "knowledge/rules/markdown-docs.md",
+    "knowledge/rules/secrets-placeholder-boundary.md"
+  ],
+  "retrieval": {
+    "shared_limit": 5,
+    "role_limit": 5,
+    "max_chars": 12000
+  },
+  "memory": {
+    "auto_refresh": true,
+    "tag_add_mode": "allow",
+    "mirror_to_global_inbox": false
+  },
+  "executor": {
+    "mode": "prepare",
+    "isolation": "logical"
+  }
+}

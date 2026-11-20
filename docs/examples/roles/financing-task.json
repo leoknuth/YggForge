@@ -1,0 +1,9 @@
+{
+  "task_id": "example-financing-review",
+  "prompt": "使用初始化示例方法说明融资合同评估的金融和法律分工。分别给出方法、来源、假设和仍需项目资料才能判断的事项，不生成真实用户、企业或合同结论。",
+  "project_id": "example-financing",
+  "tags": ["agent", "financing"],
+  "roles": ["finance-expert", "legal-expert"],
+  "dependencies": {},
+  "files": []
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""检索运行时记忆与正式知识。
+"""检索一般记忆与知识，或固定角色自己的长期 notes。
 
 由 ``ygg recall "<query>"`` 调用。支持 kind/tag/scope 过滤与 ``--json`` 输出。
 """
@@ -29,6 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Search query. Optional when at least one filter is provided.",
     )
+    parser.add_argument("--role", default=None, help="只检索该角色的长期记忆。")
+    parser.add_argument("--project", default=None, help="包含跨项目记录和指定项目记录。")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of recall results to print.")
     parser.add_argument(
         "--type",
@@ -88,10 +90,11 @@ def main() -> int:
     scope = (args.scope or "").strip()
     query = (args.query or "").strip()
 
-    if not query and not (kinds or tags or scope or agents or channels):
+    if not query and not (kinds or tags or scope or agents or channels or args.project is not None):
         parser.error("Provide --query and/or at least one of --type/--tag/--scope/--agent/--channel.")
 
-    backend = get_memory_backend()
+    backend = get_memory_backend(role_id=args.role) if args.role else get_memory_backend()
+    project_options = {"project_id": args.project} if args.project is not None else {}
     results = backend.search_memories(
         query=query,
         limit=args.limit,
@@ -101,10 +104,14 @@ def main() -> int:
         agents=agents or None,
         channels=channels or None,
         include_inactive=args.include_inactive,
+        **project_options,
     )
 
     if args.json:
         payload = {
+            "role_id": args.role,
+            "space_id": "role:" + args.role if args.role else "shared",
+            "project_id": args.project,
             "query": query or None,
             "type": kinds or None,
             "tag": tags or None,

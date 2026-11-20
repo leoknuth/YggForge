@@ -24,6 +24,7 @@ class KnowledgeEntry:
     last_reviewed: str = ""
     source_fingerprint: str = ""
     index_stale: bool = False
+    space_id: str = "shared"
 
 
 @dataclass

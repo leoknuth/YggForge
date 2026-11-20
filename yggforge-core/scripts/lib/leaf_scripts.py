@@ -12,6 +12,8 @@ from typing import Dict
 
 # 短名 → 相对 scripts/ 的 posix 路径
 LEAF_SCRIPTS: Dict[str, str] = {
+    "role_cli.py": "cmds/roles/role_cli.py",
+    "task_cli.py": "cmds/roles/task_cli.py",
     "deploy.py": "cmds/ops/deploy.py",
     "git_sync.py": "cmds/ops/git_sync.py",
     "git_risk_check.py": "cmds/ops/git_risk_check.py",

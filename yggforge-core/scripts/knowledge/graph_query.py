@@ -15,18 +15,21 @@ from knowledge.graph_build import (
     decode_catalog_payload,
     load_graph_config,
 )
-from knowledge.graph_models import AssociateHit, KnowledgeEntry
+from knowledge.graph_models import AssociateHit, KnowledgeEntry, GraphError
 from knowledge.schema import resolve_entry_type
 from knowledge.shard_store import SortedShardStore
 from knowledge.tag_graph import TagExpandInfo, TagGraph
+from knowledge.space_lock import graph_lock
 
 
 class KnowledgeGraphIndex(object):
     """已构建索引上的查询入口。"""
 
-    def __init__(self, repo_root: Optional[Path] = None, config: Optional[Dict[str, Any]] = None) -> None:
-        self.repo_root = repo_root or REPO_ROOT
-        self.config = config or load_graph_config(self.repo_root)
+    def __init__(self, repo_root: Optional[Path] = None, config: Optional[Dict[str, Any]] = None, space=None) -> None:
+        self.repo_root = space.root if space is not None else repo_root or REPO_ROOT
+        self.config = space.config if space is not None else config or load_graph_config(self.repo_root)
+        self.space_id = str(self.config.get("space_id", "shared"))
+        self.allowed_paths = self.config.get("allowed_paths")
         paths = self.config.get("paths", {})
         storage = self.config.get("storage", {})
         self.tag_graph = TagGraph.load(
@@ -67,7 +70,7 @@ class KnowledgeGraphIndex(object):
             return ""
         return self._synonym_map.get(key, key)
 
-    def get_entry(self, entry_id: str) -> Optional[KnowledgeEntry]:
+    def _get_entry(self, entry_id: str) -> Optional[KnowledgeEntry]:
         """按 id 取条目。"""
         if entry_id in self._entry_cache:
             return self._entry_cache[entry_id]
@@ -75,9 +78,14 @@ class KnowledgeGraphIndex(object):
         if payload is None:
             return None
         entry = decode_catalog_payload(entry_id, payload)
+        if self.allowed_paths is not None and not any(entry.path == p.rstrip("/") or entry.path.startswith(p.rstrip("/") + "/") for p in self.allowed_paths):
+            return None
+        entry.space_id = self.space_id
         source = (self.repo_root / entry.path).resolve()
         try:
-            source.relative_to(self.repo_root.resolve())
+            real_relative = source.relative_to(self.repo_root.resolve()).as_posix()
+            if not self._allows(real_relative):
+                return None
             raw = source.read_bytes()
         except (ValueError, OSError):
             self._entry_cache[entry_id] = None
@@ -97,12 +105,85 @@ class KnowledgeGraphIndex(object):
         self._entry_cache[entry_id] = entry
         return entry
 
-    def ids_for_tag(self, tag: str) -> List[str]:
+    def _ids_for_tag(self, tag: str) -> List[str]:
         """单个 tag 下的全部条目 id。"""
         payload = self.tag_inverted.get(self._canonical_tag(tag))
         if not payload:
             return []
-        return [part for part in payload.split("|") if part]
+        ids = [part for part in payload.split("|") if part]
+        if self.allowed_paths is None:
+            return ids
+        result = []
+        for entry_id in ids:
+            row = self.catalog.get(entry_id)
+            if row and self._allowed_source(decode_catalog_payload(entry_id, row).path):
+                result.append(entry_id)
+        return result
+
+    def _allows(self, path: str) -> bool:
+        return self.allowed_paths is None or any(path == p.rstrip("/") or path.startswith(p.rstrip("/") + "/") for p in self.allowed_paths)
+
+    def _allowed_source(self, path: str) -> bool:
+        if not self._allows(path):
+            return False
+        try:
+            real = (self.repo_root / path).resolve().relative_to(self.repo_root.resolve()).as_posix()
+        except (ValueError, OSError):
+            return False
+        return self._allows(real)
+
+    def get_entry(self, entry_id: str) -> Optional[KnowledgeEntry]:
+        """单条读取也绑定完整快照，避免绕开构建锁。"""
+        with graph_lock(self.repo_root, self.config):
+            if not getattr(self, "_query_active", False):
+                self._reload_snapshot()
+                self._entry_cache.clear()
+            return self._get_entry(entry_id)
+
+    def ids_for_tag(self, tag: str) -> List[str]:
+        """返回前先按空间范围过滤 ID。"""
+        with graph_lock(self.repo_root, self.config):
+            if not getattr(self, "_query_active", False):
+                self._reload_snapshot()
+            return self._ids_for_tag(tag)
+
+    def _reload_snapshot(self) -> None:
+        """一次查询固定当前两组索引，并限制共享标签图的可见节点。"""
+        for store in (self.catalog, self.tag_inverted):
+            store._manifest = None
+            store._memory = None
+            store._shard_cache.clear()
+            manifest = store._load_manifest()
+            if manifest.get("space_id", "shared") != self.space_id:
+                raise GraphError("索引所属知识空间与当前角色不一致。")
+        self.tag_graph = TagGraph.load(self.repo_root / str(self.config.get("paths", {}).get("tag_graph", "graph/tag-graph.yaml")), self.config)
+        self._synonym_map = self._load_synonym_map()
+        if self.allowed_paths is not None:
+            tags = set()
+            for entry_id, payload in self.catalog.items():
+                entry = decode_catalog_payload(entry_id, payload)
+                if self._allowed_source(entry.path):
+                    tags.update(entry.tags)
+            self.tag_graph.adjacency = {tag: [(neighbor, weight) for neighbor, weight in self.tag_graph.adjacency.get(tag, []) if neighbor in tags] for tag in tags}
+            self._synonym_map = {key: value for key, value in self._synonym_map.items() if value in tags}
+
+    def associate(self, *args, **kwargs) -> Tuple[List[AssociateHit], Dict[str, Any]]:
+        """查询与构建使用同一共享锁，结果明确携带空间归属。"""
+        with graph_lock(self.repo_root, self.config):
+            self._reload_snapshot()
+            self._query_active = True
+            try:
+                hits, meta = self._associate(*args, **kwargs)
+            finally:
+                self._query_active = False
+            meta["space_id"] = self.space_id
+            if self.config.get("owner_role"):
+                from knowledge.graph_build import check_indexes
+                status = check_indexes(self.repo_root, self.config)
+                meta["index_status"] = status["index_status"]
+                meta["source_digest"] = status["source_digest"]
+                meta["index_stale"] = bool(meta["index_stale"] or status["index_status"] != "consistent")
+            return hits, meta
 
     def expand_tags(
         self,
@@ -113,7 +194,7 @@ class KnowledgeGraphIndex(object):
         """扩展多级相关 tag（加权）。"""
         return self.tag_graph.expand(seeds, hop=hop, max_nodes=max_nodes)
 
-    def associate(
+    def _associate(
         self,
         seed_tags: Sequence[str],
         hop: Optional[int] = None,

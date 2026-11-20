@@ -238,11 +238,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--check", action="store_true", help="Exit non-zero if generated index differs from disk.")
     parser.add_argument("--dry-run", action="store_true", help="Print planned writes without modifying files.")
     parser.add_argument("--json", action="store_true", help="Emit JSON for Agent consumption.")
+    parser.add_argument("--role", default="", help="角色导览导出尚不支持，指定时拒绝而不回退全局")
     return parser
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.role:
+        parser.error("角色可选 by-tag 导览尚未实现；请使用角色 graph 或 associate，不会导出全局数据。")
 
     ensure_layout()
     from backends import get_memory_backend

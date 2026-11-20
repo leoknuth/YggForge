@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 inbox/distilled 晋升到 lesson / rule / template / decision。
+"""在同一知识空间内把 inbox 草稿晋升为各类长期条目。
 
 由 ``ygg promote`` 调用。含 front matter 改写、README 索引、联想查重；
-写操作受 behavior / core_write 门禁约束。
+写操作受既有门禁约束，角色晋升与查重始终留在自身 notes/graph。
 """
 
 from pathlib import Path, PureWindowsPath
@@ -18,6 +18,7 @@ SCRIPT_DIR = SCRIPTS_ROOT
 import argparse
 import json
 import re
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -39,6 +40,39 @@ README_PATHS = {
     "template": CONTENT_ROOT / "knowledge" / "templates" / "README.md",
     "decision": CONTENT_ROOT / "knowledge" / "decisions" / "README.md",
 }
+PROMOTION_SPACE = ContextVar("promotion_space", default=None)
+
+
+def content_root() -> Path:
+    """角色晋升使用自身空间；一般知识晋升沿用全局内容根。"""
+    space = PROMOTION_SPACE.get()
+    return space.root if space is not None else CONTENT_ROOT
+
+
+def lessons_inbox() -> Path:
+    space = PROMOTION_SPACE.get()
+    return space.note_root / "lessons/inbox" if space is not None else LESSONS_INBOX
+
+
+def destination_roots() -> Dict[str, Path]:
+    space = PROMOTION_SPACE.get()
+    if space is None:
+        return DESTINATION_ROOTS
+    return {kind: space.note_root / folder for kind, folder in {"lesson": "lessons", "reference": "reference", "rule": "rules", "template": "templates", "decision": "decisions"}.items()}
+
+
+def readme_paths() -> Dict[str, Path]:
+    space = PROMOTION_SPACE.get()
+    return {kind: root / "README.md" for kind, root in destination_roots().items()} if space is not None else README_PATHS
+
+
+def write_document(path: Path, text: str) -> None:
+    """角色写入原子文件，一般知识保留现有保存方式。"""
+    if PROMOTION_SPACE.get() is not None:
+        from backends.role_memory import atomic_write_text
+        atomic_write_text(path, text)
+    else:
+        path.write_text(text, encoding="utf-8-sig")
 
 class PromoteError(RuntimeError):
     pass
@@ -48,13 +82,18 @@ def resolve_entry(entry: str) -> Path:
     if candidate.is_absolute():
         path = candidate
     else:
-        path = (LESSONS_INBOX / candidate).resolve()
+        path = (lessons_inbox() / candidate).resolve()
         if not path.exists() and not str(candidate).endswith(".md"):
-            path = (LESSONS_INBOX / "{0}.md".format(candidate)).resolve()
+            path = (lessons_inbox() / "{0}.md".format(candidate)).resolve()
     if not path.exists():
         raise PromoteError("Entry does not exist: {0}".format(entry))
     if not path.is_file():
         raise PromoteError("Entry is not a file: {0}".format(path))
+    if PROMOTION_SPACE.get() is not None:
+        try:
+            path.resolve().relative_to(lessons_inbox().resolve())
+        except ValueError as exc:
+            raise PromoteError("角色只能晋升自己的 inbox 草稿。") from exc
     return path
 
 def split_front_matter(text: str) -> Tuple[Optional[List[str]], str]:
@@ -87,7 +126,7 @@ def assign_knowledge_id(lines: List[str], destination: Path) -> None:
     from knowledge.knowledge_id import generate_knowledge_id
 
     title = extract_scalar(lines, "title") or destination.stem
-    entry_id = generate_knowledge_id(destination, title, repo_root=CONTENT_ROOT, created=datetime.now())
+    entry_id = generate_knowledge_id(destination, title, repo_root=content_root(), created=datetime.now())
     update_or_append_scalar(lines, "id", entry_id)
 
 def update_rule_front_matter(lines: List[str], destination: Path) -> None:
@@ -162,10 +201,15 @@ def read_title(path: Path) -> str:
         front_lines = []
     return title_from_document(front_lines, body, path)
 
-def find_duplicate_destination(destination_root: Path, destination_name: str, title: str) -> Optional[Path]:
+def find_duplicate_destination(destination_root: Path, destination_name: str, title: str, project_id: Optional[str] = None) -> Optional[Path]:
     for path in existing_markdown_entries(destination_root):
         if path.name == destination_name:
             return path
+        if project_id is not None:
+            from lib.front_matter import parse_front_matter
+            metadata, _ = parse_front_matter(path.read_text(encoding="utf-8-sig"))
+            if str(metadata.get("project_id", "")) != project_id:
+                continue
         if read_title(path).strip().lower() == title.strip().lower():
             return path
     return None
@@ -191,7 +235,7 @@ def resolve_destination(destination_root: Path, name: str) -> Path:
     root = destination_root.resolve()
     destination = (root / relative).resolve()
     try:
-        root.relative_to(CONTENT_ROOT.resolve())
+        root.relative_to(content_root().resolve())
         destination.relative_to(root)
     except ValueError as exc:
         raise PromoteError("晋升目标超出所选类型目录: {0}".format(name)) from exc
@@ -202,6 +246,7 @@ def find_associate_duplicate(
     *,
     min_shared: int = 2,
     ratio_threshold: float = 0.5,
+    project_id: Optional[str] = None,
 ) -> List[Tuple[str, List[str]]]:
     """用标签联想查重：若已有条目与草稿共享标签达到阈值，视为雷同候选。
 
@@ -213,7 +258,8 @@ def find_associate_duplicate(
     try:
         from knowledge.graph import GraphError, KnowledgeGraphIndex
 
-        index = KnowledgeGraphIndex()
+        space = PROMOTION_SPACE.get()
+        index = KnowledgeGraphIndex(space=space) if space is not None else KnowledgeGraphIndex()
         hits, _meta = index.associate(
             seed_tags=draft_tags,
             hop=0,
@@ -226,6 +272,13 @@ def find_associate_duplicate(
     draft_set = set(draft_tags)
     duplicates: List[Tuple[str, List[str]]] = []
     for hit in hits:
+        if "inbox" in Path(hit.entry.path).parts:
+            continue
+        if project_id is not None and space is not None:
+            from lib.front_matter import parse_front_matter
+            metadata, _ = parse_front_matter((space.root / hit.entry.path).read_text(encoding="utf-8-sig"))
+            if str(metadata.get("project_id", "")) != project_id:
+                continue
         shared = draft_set & set(hit.entry.tags)
         if not shared:
             continue
@@ -242,7 +295,7 @@ def ensure_current_entries_section(readme_text: str) -> str:
     return readme_text + suffix
 
 def update_readme_index(kind: str, destination_name: str) -> None:
-    readme_path = README_PATHS[kind]
+    readme_path = readme_paths()[kind]
     if not readme_path.exists():
         return
     text = ensure_current_entries_section(readme_path.read_text(encoding="utf-8-sig"))
@@ -250,8 +303,7 @@ def update_readme_index(kind: str, destination_name: str) -> None:
     head, tail = text.split(marker, 1)
     lines = tail.splitlines()
     bullet_lines = [line for line in lines[1:] if line.strip().startswith("- ")]
-    # Strip leading "- " and any surrounding backticks so re-wrapping does not
-    # multiply backticks on every promotion.
+    # 移除原有项目符号和外围反引号，避免每次晋升重复添加。
     raw_items = set()
     for line in bullet_lines:
         item = line.strip()[2:].strip()
@@ -263,16 +315,13 @@ def update_readme_index(kind: str, destination_name: str) -> None:
     rebuilt = [marker, ""]
     rebuilt.extend("- `{0}`".format(item) for item in bullet_items)
     # Ensure a blank line separates the existing head from the marker.
-    readme_path.write_text(
-        "{0}\n\n{1}\n".format(head.rstrip(), "\n".join(rebuilt)),
-        encoding="utf-8-sig",
-    )
+    write_document(readme_path, "{0}\n\n{1}\n".format(head.rstrip(), "\n".join(rebuilt)))
 
 def resolve_entries(entries: List[str], promote_all: bool) -> List[Path]:
     resolved: List[Path] = []
     if promote_all:
-        if LESSONS_INBOX.exists():
-            resolved.extend(sorted(path for path in LESSONS_INBOX.glob("*.md") if path.name != "README.md"))
+        if lessons_inbox().exists():
+            resolved.extend(sorted(path for path in lessons_inbox().glob("*.md") if path.name != "README.md"))
         return resolved
     for entry in entries:
         resolved.append(resolve_entry(entry))
@@ -281,6 +330,7 @@ def resolve_entries(entries: List[str], promote_all: bool) -> List[Path]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Promote a lesson inbox draft into a lesson, reference, rule, template, or decision.")
     parser.add_argument("--entry", action="append", default=[], help="Inbox entry filename or path. Can be repeated.")
+    parser.add_argument("--role", default=None, help="将角色草稿晋升到同一角色的 notes。")
     parser.add_argument(
         "--to",
         required=True,
@@ -323,6 +373,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    selected = None
+    if args.role:
+        from knowledge.spaces import role_space
+        selected = role_space(args.role)
+    token = PROMOTION_SPACE.set(selected)
+    try:
+        if selected is not None and not args.dry_run:
+            from backends.role_memory import role_write_lock
+            with role_write_lock(selected):
+                return run_promotion(args)
+        return run_promotion(args)
+    finally:
+        PROMOTION_SPACE.reset(token)
+
+
+def run_promotion(args: argparse.Namespace) -> int:
+    """在本次绑定的空间内执行校验、晋升和结果输出。"""
 
     if not args.all and not args.entry:
         raise PromoteError("`promote` requires --entry or --all.")
@@ -387,8 +454,16 @@ def main() -> int:
     for source in sources:
         source_text = source.read_text(encoding="utf-8-sig")
         front_lines, body = split_front_matter(source_text)
+        selected = PROMOTION_SPACE.get()
+        project_id = None
+        if selected is not None:
+            from lib.front_matter import parse_front_matter
+            metadata, _ = parse_front_matter(source_text)
+            if metadata.get("owner_role") not in (None, "", selected.owner_role) or metadata.get("space_id") not in (None, "", selected.space_id):
+                raise PromoteError("草稿所有者不属于当前角色。")
+            project_id = str(metadata.get("project_id", ""))
 
-        destination_root = DESTINATION_ROOTS[args.to]
+        destination_root = destination_roots()[args.to]
         destination_name = args.name or source.name
         destination = resolve_destination(destination_root, destination_name)
         destination_name = destination.relative_to(destination_root.resolve()).as_posix()
@@ -401,7 +476,10 @@ def main() -> int:
             updated_front = ['title: "{0}"'.format(destination.stem), 'status: "draft"']
 
         title = title_from_document(updated_front, body, destination)
-        duplicate = find_duplicate_destination(destination_root, destination_name, title)
+        if selected is not None:
+            update_or_append_scalar(updated_front, "owner_role", selected.owner_role)
+            update_or_append_scalar(updated_front, "space_id", selected.space_id)
+        duplicate = find_duplicate_destination(destination_root, destination_name, title, project_id=project_id) if selected is not None else find_duplicate_destination(destination_root, destination_name, title)
         if duplicate and not args.allow_duplicate:
             item = {
                 "source": str(source),
@@ -422,7 +500,7 @@ def main() -> int:
         # 自动路径：标签联想查重——有雷同则跳过（客观知识才允许自动晋升）
         if args.auto:
             draft_tags = extract_tags(updated_front)
-            assoc_dupes = find_associate_duplicate(draft_tags)
+            assoc_dupes = find_associate_duplicate(draft_tags, project_id=project_id) if selected is not None else find_associate_duplicate(draft_tags)
             if assoc_dupes and not args.allow_duplicate:
                 dupe_paths = "; ".join(
                     "{0} (shared: {1})".format(p, ",".join(s)) for p, s in assoc_dupes
@@ -464,7 +542,7 @@ def main() -> int:
         write_status = "skipped (dry-run)" if args.dry_run else "ok"
         if not args.dry_run:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(rendered, encoding="utf-8-sig")
+            write_document(destination, rendered)
             source.unlink()
             update_readme_index(args.to, destination_name)
 
@@ -484,8 +562,13 @@ def main() -> int:
             print("promote_status : active")
             print("promote_write  : {0}".format(write_status))
 
+    selected = PROMOTION_SPACE.get()
+    refresh = None
+    if selected is not None and not args.dry_run and any(item.get("write") == "ok" for item in results):
+        from backends.role_memory import refresh_role_memory
+        refresh = refresh_role_memory(selected, acquire_lock=False)
     if args.json:
-        json.dump({"results": results, "count": len(results)}, sys.stdout, ensure_ascii=False, indent=2)
+        json.dump({"results": results, "count": len(results), "space_id": selected.space_id if selected is not None else "shared", "memory_refresh": refresh}, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
     return 0
 

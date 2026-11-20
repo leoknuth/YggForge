@@ -44,3 +44,6 @@ desktop.ini
 !.agents/skills/accelint-readme-writer/
 !.agents/skills/accelint-readme-writer/**
 skills-lock.json
+
+# 实际角色配置和私有记忆不进入公共框架仓库
+/yggforge-core/roles/
