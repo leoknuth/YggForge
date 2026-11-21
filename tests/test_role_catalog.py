@@ -16,14 +16,15 @@ from roles.registry import create_role, load_role, RoleError
 
 class RoleCatalogTests(unittest.TestCase):
     def test_brief_filters_all_tags_without_loading_skill_bodies(self):
-        base = {"revision": 1, "description": "角色用途", "skills": ["skills/method"], "projects": ["case"], "shared_paths": [], "context_files": []}
+        base = {"revision": 1, "description": "角色用途", "skills": ["skills/method"], "records": ["case"], "shared_paths": [], "context_files": []}
         roles = [dict(base, id="one", name="甲", tags=["research", "finance"]), dict(base, id="two", name="乙", tags=["research"])]
         output = io.StringIO()
         with patch.object(sys, "argv", ["role_cli", "list", "--brief", "--tag", "research", "--tag", "finance"]), patch.object(role_cli, "list_roles", return_value=roles), contextlib.redirect_stdout(output):
             self.assertEqual(role_cli.main(), 0)
         found = json.loads(output.getvalue())["roles"]
         self.assertEqual([item["id"] for item in found], ["one"])
-        self.assertEqual((found[0]["skill_count"], found[0]["project_count"]), (1, 1))
+        self.assertEqual((found[0]["skill_count"], found[0]["record_count"]), (1, 1))
+        self.assertNotIn("project_count", found[0])
         self.assertNotIn("skills", found[0])
 
     def test_unknown_tags_produce_no_candidate(self):

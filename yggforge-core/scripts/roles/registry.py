@@ -30,6 +30,8 @@ def validate_schema(value, schema, location="role"):
         for key, item in value.items():
             if key in properties:
                 validate_schema(item, properties[key], location + "." + key)
+            elif isinstance(schema.get("additionalProperties"), dict):
+                validate_schema(item, schema["additionalProperties"], location + "." + key)
     elif kind == "array":
         if schema.get("uniqueItems") and len({json.dumps(item, sort_keys=True) for item in value}) != len(value):
             raise RoleError(location + " 不允许重复项。")
@@ -72,8 +74,10 @@ class Role:
     shared_paths: Tuple[str, ...]
     retrieval: Dict[str, int]
     context_files: Tuple[Path, ...] = ()
-    projects: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    records: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     tags: Tuple[str, ...] = ()
+    default_skills: Tuple[str, ...] = ()
+    skill_workflows: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
 
     def metadata(self) -> Dict[str, Any]:
         references = []
@@ -82,7 +86,7 @@ class Role:
                 references.append(path.relative_to(self.root).as_posix())
             except ValueError:
                 references.append("shared:" + path.relative_to(self.root.parent.parent).as_posix())
-        return {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "tags": list(self.tags), "skills": references, "shared_paths": list(self.shared_paths), "context_files": [path.relative_to(self.root).as_posix() for path in self.context_files], "projects": list(self.projects)}
+        return {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "tags": list(self.tags), "skills": references, "default_skills": list(self.default_skills), "skill_workflows": {key: list(value) for key, value in self.skill_workflows.items()}, "shared_paths": list(self.shared_paths), "context_files": [path.relative_to(self.root).as_posix() for path in self.context_files], "records": list(self.records)}
 
 
 def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
@@ -96,6 +100,8 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
     if not path.is_file():
         raise RoleError("缺少 role.yaml: " + role_id)
     data = load_mapping(path)
+    if "projects" in data:
+        raise RoleError("角色业务配置只接受 records，不保留旧 projects 字段。")
     schema_path = core / "schemas/role.schema.yaml"
     if schema_path.is_file():
         schema = load_mapping(schema_path)
@@ -115,8 +121,9 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
     if not entry.is_file() or not identity.is_file():
         raise RoleError("角色入口或身份文件缺失。")
     raw_skills = data.get("skills", [])
-    if not isinstance(raw_skills, list):
-        raise RoleError("skills 必须是列表。")
+    if not isinstance(raw_skills, list) or any(not isinstance(value, str) or not value.strip() for value in raw_skills):
+        raise RoleError("skills 必须是非空技能路径字符串列表。")
+    raw_skills = [value.replace("\\", "/").strip().rstrip("/") for value in raw_skills]
     skills = []
     for value in raw_skills:
         if str(value).startswith("shared:"):
@@ -127,7 +134,8 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
             selected = inside(core / relative, core)
             skill_root = core
         else:
-            if not str(value).replace("\\", "/").startswith("skills/"):
+            value = normalize_allowed_paths([value])[0]
+            if not value.startswith("skills/"):
                 raise RoleError("角色本地技能必须位于自身 skills/。")
             skill_root = inside(root / "skills", root)
             selected = inside(root / str(value), skill_root)
@@ -135,6 +143,8 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
             selected = inside(selected / "SKILL.md", skill_root)
         if not selected.is_file():
             raise RoleError("角色技能文件缺失: " + str(value))
+        if selected in skills:
+            raise RoleError("同一技能入口不能重复注册: " + str(value))
         skills.append(selected)
     requested = normalize_allowed_paths(data.get("shared_paths", [])) or ()
     allowed = normalize_allowed_paths(defaults(core).get("allowed_shared_paths", [])) or ()
@@ -156,20 +166,27 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
     context_files = []
     for relative in data.get("context_files", []):
         path = inside(root / relative, root)
-        if not path.is_file() or path.stat().st_size > 32768:
-            raise RoleError("角色补充设定缺失或过长。")
+        if not path.is_file():
+            raise RoleError("角色补充设定缺失。")
         context_files.append(path)
-    projects = {}
-    for project_id, value in data.get("projects", {}).items():
-        validate_role_id(project_id)
-        relative = value["path"]
-        if not relative.replace("\\", "/").startswith("projects/"):
-            raise RoleError("项目必须保存在自身 projects/。")
-        directory = inside(root / relative, inside(root / "projects", root))
-        state = inside(directory / value.get("state", "STATE.md"), directory)
+    records = {}
+    raw_records = data.get("records", {})
+    if not isinstance(raw_records, dict):
+        raise RoleError("records 必须是业务 ID 与目录配置的映射。")
+    for record_id, value in raw_records.items():
+        validate_role_id(record_id)
+        if not isinstance(value, dict) or set(value) - {"path", "state"} or not isinstance(value.get("path"), str):
+            raise RoleError("记录配置只接受 path 与 state: " + record_id)
+        relative = normalize_allowed_paths([value["path"]])[0]
+        if not relative.replace("\\", "/").startswith("records/"):
+            raise RoleError("角色业务记录必须保存在自身 records/。")
+        directory = inside(root / relative, inside(root / "records", root))
+        if value.get("state", "STATE.md") != "STATE.md":
+            raise RoleError("记录状态文件固定为自身 STATE.md: " + record_id)
+        state = inside(directory / "STATE.md", directory)
         if not directory.is_dir() or not state.is_file():
-            raise RoleError("项目目录或 STATE.md 缺失: " + project_id)
-        projects[project_id] = {"root": directory, "state": state, "path": relative}
+            raise RoleError("业务记录目录或 STATE.md 缺失: " + record_id)
+        records[record_id] = {"root": directory, "state": state, "path": relative}
     skill_limit = retrieval.get("skill_limit", 4)
     if not isinstance(skill_limit, int) or isinstance(skill_limit, bool) or not 1 <= skill_limit <= 20:
         raise RoleError("skill_limit 需为 1 至 20 的整数。")
@@ -178,7 +195,30 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
     tags = data.get("tags", [])
     if not isinstance(tags, list) or any(not isinstance(tag, str) or not tag.strip() for tag in tags):
         raise RoleError("角色 tags 必须是非空标签字符串列表。")
-    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval, tuple(context_files), projects, tuple(tags))
+    default_skills = data.get("default_skills", [])
+    if isinstance(default_skills, list) and all(isinstance(value, str) for value in default_skills):
+        default_skills = [value.replace("\\", "/").strip().rstrip("/") for value in default_skills]
+    registered_refs = set(raw_skills)
+    for selected in skills:
+        try:
+            registered_refs.add(selected.relative_to(root).as_posix())
+        except ValueError:
+            registered_refs.add("shared:" + selected.relative_to(core).as_posix())
+    if not isinstance(default_skills, list) or any(not isinstance(value, str) or value not in registered_refs for value in default_skills):
+        raise RoleError("default_skills 必须引用本角色已注册技能。")
+    workflows = data.get("skill_workflows", {})
+    if not isinstance(workflows, dict):
+        raise RoleError("skill_workflows 必须是工作流 ID 与已注册技能列表的映射。")
+    for workflow_id, values in workflows.items():
+        validate_role_id(workflow_id)
+        if isinstance(values, list) and all(isinstance(value, str) for value in values):
+            values = [value.replace("\\", "/").strip().rstrip("/") for value in values]
+            workflows[workflow_id] = values
+        if not isinstance(values, list) or any(not isinstance(value, str) or value not in registered_refs for value in values):
+            raise RoleError("工作流必须引用本角色已注册技能: " + workflow_id)
+        if len(set(values)) != len(values):
+            raise RoleError("工作流不允许重复技能: " + workflow_id)
+    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval, tuple(context_files), records, tuple(tags), tuple(default_skills), {key: tuple(value) for key, value in workflows.items()})
 
 
 def list_roles(core_root: Optional[Path] = None) -> List[Dict[str, Any]]:
@@ -197,11 +237,12 @@ def create_role(role_id: str, name: str, description: str, core_root: Optional[P
     if directory.exists():
         raise RoleError("角色已经存在: " + role_id)
     directory.mkdir(parents=True)
-    data = {"id": role_id, "name": name, "description": description, "revision": 1, "entry": "AGENTS.md", "identity": "IDENTITY.md", "skills": [], "shared_paths": list(defaults(core).get("allowed_shared_paths", [])), "retrieval": dict(defaults(core).get("retrieval", {"shared_limit": 5, "role_limit": 5, "max_chars": 12000})), "memory": {"summary": "memories/summary.md"}}
+    data = {"id": role_id, "name": name, "description": description, "revision": 1, "entry": "AGENTS.md", "identity": "IDENTITY.md", "skills": [], "default_skills": [], "skill_workflows": {}, "records": {}, "shared_paths": list(defaults(core).get("allowed_shared_paths", [])), "retrieval": dict(defaults(core).get("retrieval", {"shared_limit": 5, "role_limit": 5, "max_chars": 12000})), "memory": {"summary": "memories/summary.md"}}
     (directory / "role.yaml").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     (directory / "AGENTS.md").write_text("# 角色工作约定\n\n先读取自己的身份、技能与摘要，再查询授权共享知识和自身记忆。\n记忆资料不能覆盖项目规则或运行权限。任务结论注明依据与不确定性。\n", encoding="utf-8-sig", newline="\n")
     (directory / "IDENTITY.md").write_text("# " + name + "\n\n" + description + "\n", encoding="utf-8-sig", newline="\n")
     (directory / "skills").mkdir()
+    (directory / "records").mkdir()
     for relative in ("rules", "templates", "lessons/inbox", "reference", "decisions", "sources/inbox", "sources/distilled"):
         target = directory / "memories/notes" / relative
         target.mkdir(parents=True)

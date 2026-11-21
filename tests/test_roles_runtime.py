@@ -59,7 +59,7 @@ class RoleRuntimeTests(unittest.TestCase):
 
     def test_role_cannot_expand_shared_permissions(self):
         path = self.core / "roles/finance-expert/role.yaml"
-        value = json.loads(path.read_text())
+        value = json.loads(path.read_text(encoding="utf-8"))
         value["shared_paths"] = ["knowledge"]
         path.write_text(json.dumps(value))
         with self.assertRaises(RoleError):
@@ -67,7 +67,7 @@ class RoleRuntimeTests(unittest.TestCase):
 
     def test_role_entry_path_cannot_escape(self):
         path = self.core / "roles/finance-expert/role.yaml"
-        value = json.loads(path.read_text())
+        value = json.loads(path.read_text(encoding="utf-8"))
         value["identity"] = "../legal-expert/IDENTITY.md"
         path.write_text(json.dumps(value))
         with self.assertRaises(RoleError):

@@ -2,6 +2,13 @@
 
 > 路径约定：文中 `knowledge/`、`profiles/`、`graph/`、`config/`、`scripts/` 无前缀时，默认相对 **`yggforge-core/`**。本机态见 `yggforge-runtime/`，生成物见 `yggforge-generated/`。
 
+## 目录
+
+- [分层](#分层)
+- [推荐阅读顺序](#推荐阅读顺序)
+- [按目标](#按目标)
+- [角色与双路联想](#角色与双路联想)
+
 ## 分层
 
 | 目录 | 用途 |
@@ -37,5 +44,10 @@
 | 商用许可 | [reference/licensing.md](reference/licensing.md) |
 | 后续优化 | [opt-plan/](opt-plan/README.md) |
 
+## 角色与双路联想
 
-角色资料导入与静态资源分层：[角色导入指南](guide/role-import.md)。
+- [伙伴角色架构](concepts/role-partners.md)：存储与工作流程两图、完整专业方法、记录和记忆空间。
+- [伙伴角色使用指南](guide/roles.md)：注册发现、默认入口、完整工作流、双路上下文、隔离与保存。
+- [保真导入指南](guide/role-import.md)：完整源方法、原生内化、异常输入、退役处置与逐项审计。
+- [角色资源契约](guide/role-resources.md)：全文加载、静态资源、业务records与工具状态。
+- [金融与法律任务示例](examples/roles/README.md)：并行任务与前序依赖，示例不含真实业务结论。

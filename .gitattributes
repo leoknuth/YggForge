@@ -8,7 +8,7 @@
 *.yaml text eol=lf
 
 # 角色导入资料保持原字节，便于跨平台按来源指纹复核。
-yggforge-core/roles/*/projects/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
+yggforge-core/roles/*/records/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 yggforge-core/roles/*/skills/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 
 # 二进制素材不按正文生成差异，保留完整原字节。

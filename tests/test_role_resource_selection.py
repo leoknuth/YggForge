@@ -69,7 +69,7 @@ class RoleResourceSelectionTests(unittest.TestCase):
                 resources(self.entry, value)
 
     def test_declared_blocked_resources_and_unsafe_subtree_are_rejected(self):
-        for name in [".env", ".env.production", ".cache/item.txt", "cache/item.txt", "node_modules/item.txt", "data.zip", "data.tar.gz", "data.7z", "__pycache__/compiled.pyc"]:
+        for name in [".env", ".env.production", "credentials.json", "auth.json", "token.json", ".cache/item.txt", "cache/item.txt", "node_modules/item.txt", "data.zip", "data.tar.gz", "data.7z", "__pycache__/compiled.pyc"]:
             self.write(name, "不可投影的资料占位")
             with self.subTest(name=name), self.assertRaises(RoleError):
                 resources(self.entry, [name])

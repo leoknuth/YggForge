@@ -52,6 +52,21 @@
       },
       "uniqueItems": true
     },
+    "default_skills": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true,
+      "description": "默认必读首入口，必须引用已注册技能，不受可选检索skill_limit裁剪"
+    },
+    "skill_workflows": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "uniqueItems": true
+      },
+      "description": "工作流ID到完整已注册技能列表，task.workflow选择且不按四项预算裁剪"
+    },
     "shared_paths": {
       "type": "array",
       "items": {
@@ -76,13 +91,13 @@
           "type": "integer",
           "minimum": 512,
           "maximum": 200000,
-          "description": "每路检索正文的字符预算；摘要、角色入口和技能另行限定"
+          "description": "每路检索命中的正文预算；完整角色设定、技能和业务STATE不截断"
         },
         "skill_limit": {
           "type": "integer",
           "minimum": 1,
           "maximum": 20,
-          "description": "自动激活技能上限，显式skills请求另行验证"
+          "description": "可选自动命中技能上限；默认入口、完整工作流和显式skills不裁剪"
         }
       },
       "required": [
@@ -137,9 +152,18 @@
       },
       "description": "可选的角色内补充设定，长期历史不全量放入启动上下文"
     },
-    "projects": {
+    "records": {
       "type": "object",
-      "description": "固定项目ID映射到自身projects目录和STATE.md；实际路径由注册表校验"
+      "description": "稳定业务ID映射到自身records目录和STATE.md；项目作用域project_id继续保留",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["path", "state"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^records/", "minLength": 9},
+          "state": {"const": "STATE.md"}
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": false

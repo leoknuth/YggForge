@@ -15,7 +15,7 @@ def parser():
     root = argparse.ArgumentParser(description="YggForge 角色与长期记忆")
     commands = root.add_subparsers(dest="action", required=True)
     listing = commands.add_parser("list")
-    listing.add_argument("--brief", action="store_true", help="只显示角色说明、标签和技能/项目数量")
+    listing.add_argument("--brief", action="store_true", help="只显示角色说明、标签和技能/业务记录数量")
     listing.add_argument("--tag", action="append", default=[], help="仅显示包含所有指定标签的角色")
     for action in ("show", "check", "create", "prepare", "run"):
         child = commands.add_parser(action)
@@ -29,6 +29,7 @@ def parser():
             child.add_argument("--project-id", default="")
             child.add_argument("--tag", action="append", default=[])
             child.add_argument("--skill", action="append", default=[])
+            child.add_argument("--workflow", default="", help="选择本角色注册的完整技能工作流")
         if action == "run":
             child.add_argument("--backend", choices=["prepare", "codex"])
             child.add_argument("--isolation", choices=["logical", "enforced"])
@@ -49,7 +50,7 @@ def main():
         if args.action == "list":
             roles = [item for item in list_roles() if all(tag in item.get("tags", []) for tag in args.tag)]
             if args.brief:
-                roles = [{key: item[key] for key in ("id", "name", "revision", "description", "tags")} | {"skill_count": len(item["skills"]), "project_count": len(item["projects"])} for item in roles]
+                roles = [{key: item[key] for key in ("id", "name", "revision", "description", "tags")} | {"skill_count": len(item["skills"]), "record_count": len(item["records"])} for item in roles]
             result = {"roles": roles}
         elif args.action == "tool":
             from roles.tools import run_tool
@@ -74,7 +75,7 @@ def main():
             result = commit_roles(args.role_ids, args.push)
         else:
             from roles.loader import load_task, prepare_context
-            task = load_task(args.task_file, args.task, args.project_id, args.tag)
+            task = load_task(args.task_file, args.task, args.project_id, args.tag, args.workflow)
             if args.skill:
                 task["skills"] = args.skill
             if args.action == "prepare":

@@ -102,8 +102,8 @@ def execute(bundle: ContextBundle, backend: str = None, isolation: str = None, t
             target.write_bytes(source.read_bytes())
     for item in bundle.context_files:
         snapshot(item["path"], item["body"])
-    if bundle.project_state:
-        snapshot("project/STATE.md", bundle.project_state["body"])
+    if bundle.record_state:
+        snapshot("record/STATE.md", bundle.record_state["body"])
     snapshot("memories/summary.md", bundle.role_summary["body"])
     for group, prefix in ((bundle.shared_hits, "shared/"), (bundle.role_hits, "memories/")):
         for hit in group:

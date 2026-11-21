@@ -1,4 +1,4 @@
-"""导入角色后的渐进技能、支持资源、项目状态与工具未授权边界。"""
+"""导入角色的完整技能、支持资源、业务状态与工具未授权边界。"""
 
 import json
 from pathlib import Path
@@ -27,7 +27,7 @@ class RoleImportTests(unittest.TestCase):
         (self.core / "graph").mkdir()
         (self.core / "graph/tag-graph.yaml").write_text('{"tags":{}}')
         self.role = create_role("finance-expert", "金融专家", "用于导入能力验证", self.core)
-        self.config = json.loads((self.role.root / "role.yaml").read_text())
+        self.config = json.loads((self.role.root / "role.yaml").read_text(encoding="utf-8"))
         for name, tag in (("charts", "chart"), ("research", "research")):
             directory = self.role.root / "skills" / name
             (directory / "references").mkdir(parents=True)
@@ -39,12 +39,12 @@ class RoleImportTests(unittest.TestCase):
         self.config["skills"] = ["skills/charts", "skills/research"]
         (self.role.root / "SOUL.md").write_text("简洁研究原则", encoding="utf-8")
         self.config["context_files"] = ["SOUL.md"]
-        self.project = self.role.root / "projects/research-one"
+        self.project = self.role.root / "records/research/research-one"
         self.project.mkdir(parents=True)
         (self.project / "STATE.md").write_text("导入研究未复算；缺失输入须先核验", encoding="utf-8")
         (self.project / "data.txt").write_text("项目限定的数据", encoding="utf-8")
         (self.project / "chart.png").write_bytes(b"opaque-image-asset")
-        self.config["projects"] = {"research-one":{"path":"projects/research-one","state":"STATE.md"}}
+        self.config["records"] = {"research-one":{"path":"records/research/research-one","state":"STATE.md"}}
         (self.role.root / "role.yaml").write_text(json.dumps(self.config))
         self.role = load_role("finance-expert", self.core)
         build_indexes(space=shared_space(self.core))
@@ -70,10 +70,11 @@ class RoleImportTests(unittest.TestCase):
         with self.assertRaises(RoleError):
             select(self.role, self.task(skills=["unknown"]))
 
-    def test_project_state_and_assets_are_owned_and_snapshotted(self):
+    def test_record_state_and_assets_are_owned_and_snapshotted(self):
         bundle = prepare_context("finance-expert", self.task(files=["data.txt", "chart.png"], skills=["research"]), self.core)
-        self.assertEqual(bundle.project_state["project_id"], "research-one")
-        self.assertIn("未复算", bundle.project_state["body"])
+        self.assertEqual(bundle.record_state["project_id"], "research-one")
+        self.assertIn("未复算", bundle.record_state["body"])
+        self.assertNotIn("project_state", bundle.as_dict())
         self.assertNotIn("source_path", json.dumps(bundle.as_dict()))
         with patch("roles.executor.HOST_RUNTIME_ROOT", Path(self.temp.name) / "runtime"):
             result = execute(bundle, backend="prepare")
@@ -81,12 +82,12 @@ class RoleImportTests(unittest.TestCase):
         self.assertTrue((root / "skills/research/references/detail.md").exists())
         self.assertFalse((root / "skills/research/.env").exists())
         self.assertTrue((root / "SOUL.md").exists())
-        self.assertEqual((root / "project/chart.png").read_bytes(), b"opaque-image-asset")
-        self.assertEqual((root / "project/data.txt").read_text(encoding="utf-8-sig"), "项目限定的数据")
+        self.assertEqual((root / "record/chart.png").read_bytes(), b"opaque-image-asset")
+        self.assertEqual((root / "record/data.txt").read_text(encoding="utf-8-sig"), "项目限定的数据")
         self.assertFalse((root / "skills/charts").exists())
 
     def test_other_role_project_cannot_be_declared_as_this_project(self):
-        other = self.core / "roles/legal-expert/projects/other"
+        other = self.core / "roles/legal-expert/records/other"
         other.mkdir(parents=True)
         with self.assertRaises(RoleError):
             prepare_context("finance-expert", self.task(project_root=str(other)), self.core)
@@ -101,7 +102,7 @@ class RoleImportTests(unittest.TestCase):
         with patch("roles.executor.HOST_RUNTIME_ROOT", Path(self.temp.name) / "runtime"):
             result = execute(bundle, backend="prepare")
         for name, data in payloads.items():
-            self.assertEqual((Path(result["workspace"]) / "project" / name).read_bytes(), data)
+            self.assertEqual((Path(result["workspace"]) / "record" / name).read_bytes(), data)
 
     def test_provider_business_query_is_blocked_before_login(self):
         settings = {"tools":{"hithink-finance":{"roles":["finance-expert"],"installed":True,"authenticated":False,"command":["node","client"]}}}
