@@ -73,6 +73,7 @@ class Role:
     retrieval: Dict[str, int]
     context_files: Tuple[Path, ...] = ()
     projects: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    tags: Tuple[str, ...] = ()
 
     def metadata(self) -> Dict[str, Any]:
         references = []
@@ -81,7 +82,7 @@ class Role:
                 references.append(path.relative_to(self.root).as_posix())
             except ValueError:
                 references.append("shared:" + path.relative_to(self.root.parent.parent).as_posix())
-        return {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "skills": references, "shared_paths": list(self.shared_paths), "context_files": [path.relative_to(self.root).as_posix() for path in self.context_files], "projects": list(self.projects)}
+        return {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "tags": list(self.tags), "skills": references, "shared_paths": list(self.shared_paths), "context_files": [path.relative_to(self.root).as_posix() for path in self.context_files], "projects": list(self.projects)}
 
 
 def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
@@ -174,7 +175,10 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
         raise RoleError("skill_limit 需为 1 至 20 的整数。")
     retrieval["skill_limit"] = skill_limit
     role_space(role_id, core)
-    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval, tuple(context_files), projects)
+    tags = data.get("tags", [])
+    if not isinstance(tags, list) or any(not isinstance(tag, str) or not tag.strip() for tag in tags):
+        raise RoleError("角色 tags 必须是非空标签字符串列表。")
+    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval, tuple(context_files), projects, tuple(tags))
 
 
 def list_roles(core_root: Optional[Path] = None) -> List[Dict[str, Any]]:

@@ -14,7 +14,9 @@ from roles.registry import RoleError, create_role, list_roles, load_role
 def parser():
     root = argparse.ArgumentParser(description="YggForge 角色与长期记忆")
     commands = root.add_subparsers(dest="action", required=True)
-    commands.add_parser("list")
+    listing = commands.add_parser("list")
+    listing.add_argument("--brief", action="store_true", help="只显示角色说明、标签和技能/项目数量")
+    listing.add_argument("--tag", action="append", default=[], help="仅显示包含所有指定标签的角色")
     for action in ("show", "check", "create", "prepare", "run"):
         child = commands.add_parser(action)
         child.add_argument("role_id")
@@ -45,7 +47,10 @@ def main():
     args = parser().parse_args()
     try:
         if args.action == "list":
-            result = {"roles": list_roles()}
+            roles = [item for item in list_roles() if all(tag in item.get("tags", []) for tag in args.tag)]
+            if args.brief:
+                roles = [{key: item[key] for key in ("id", "name", "revision", "description", "tags")} | {"skill_count": len(item["skills"]), "project_count": len(item["projects"])} for item in roles]
+            result = {"roles": roles}
         elif args.action == "tool":
             from roles.tools import run_tool
             values = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments

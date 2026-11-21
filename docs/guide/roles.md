@@ -127,3 +127,12 @@ enforced 在 Linux 使用 Landlock；Windows 通过 WSL 执行。只把获准入
 roles.defaults.json 的 git_storage.enabled 由管理者启用。role commit 只暂存指定角色目录，拒绝混入其它任务暂存内容，并核对图和摘要后提交。公共框架分发默认关闭角色 Git 保存且忽略实际 roles 数据；迁入管理者确认的私有工作库后再启用此项。
 
 memory.auto_refresh 控制保存后的自动图与摘要刷新，tag_add_mode 只控制角色自己的新标签，不授权全局图。角色不能自动镜像全局 inbox；模型结果固定 agent 来源和草稿状态。共享技能引用可使用 shared: 前缀，但须位于管理者 allowed_shared_skill_paths 准入范围。
+
+
+## 角色发现与静态资源声明
+
+角色配置可用 tags 提供发现标签。`ygg role list --brief` 只显示说明、标签和技能／项目数量；多个 `--tag` 要求全部命中，只筛候选，不执行角色或扩大权限。
+
+技能 metadata.resources 可声明自身目录内实际存在的静态文件或子目录；空数组不给支持资料，缺省保持安全扫描。学情、客户记录、会话和运行状态留在自己的记忆或项目，不混入技能静态资源。明确选定的字体、音视频与演示文件作为二进制资产投影，提供位置和指纹，单个项目资料仍限32MiB。
+
+导入分层、来源记录与资源边界见 [角色导入指南](role-import.md)。

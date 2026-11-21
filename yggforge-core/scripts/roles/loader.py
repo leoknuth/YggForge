@@ -105,7 +105,7 @@ def prepare_context(role_id: str, task: Dict[str, Any], core_root: Optional[Path
         if not path.is_file() or path.stat().st_size > 32 * 1024 * 1024:
             raise RoleError("任务资料缺失或过大。")
         snapshot = "project/" + path.relative_to(registered_project["root"]).as_posix() if own_project else "inputs/" + str(file_index) + "-" + path.name
-        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".xlsx", ".xls", ".docx"}:
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".xlsx", ".xls", ".docx", ".pptx", ".otf", ".ttf", ".woff", ".woff2", ".eot", ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".mp4", ".webm", ".mov"}:
             files.append({"name": path.name, "kind": "asset", "source_path": str(path), "snapshot_path": snapshot, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "bytes": path.stat().st_size})
         else:
             if path.stat().st_size > 2 * 1024 * 1024:

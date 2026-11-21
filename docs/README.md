@@ -36,3 +36,6 @@
 | 多机 git | [reference/sync.md](reference/sync.md) |
 | 商用许可 | [reference/licensing.md](reference/licensing.md) |
 | 后续优化 | [opt-plan/](opt-plan/README.md) |
+
+
+角色资料导入与静态资源分层：[角色导入指南](guide/role-import.md)。

@@ -33,6 +33,12 @@
       "type": "string",
       "minLength": 1
     },
+    "tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "description": "角色发现标签，仅筛选候选，不授予共享或执行权限"
+    },
     "entry": {
       "const": "AGENTS.md"
     },

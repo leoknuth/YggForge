@@ -91,6 +91,18 @@ class RoleImportTests(unittest.TestCase):
         with self.assertRaises(RoleError):
             prepare_context("finance-expert", self.task(project_root=str(other)), self.core)
 
+    def test_project_fonts_audio_and_slides_are_opaque_assets(self):
+        payloads = {"font.otf": b"\xff\x00" * (1024 * 1024 + 1), "audio.wav": b"RIFF\xff\x00audio", "slides.pptx": b"PK\xff\x00slides"}
+        for name, data in payloads.items():
+            (self.project / name).write_bytes(data)
+        bundle = prepare_context("finance-expert", self.task(files=list(payloads), skills=["research"]), self.core)
+        self.assertTrue(all(item["kind"] == "asset" for item in bundle.task["files"]))
+        self.assertTrue(all("body" not in item for item in bundle.task["files"]))
+        with patch("roles.executor.HOST_RUNTIME_ROOT", Path(self.temp.name) / "runtime"):
+            result = execute(bundle, backend="prepare")
+        for name, data in payloads.items():
+            self.assertEqual((Path(result["workspace"]) / "project" / name).read_bytes(), data)
+
     def test_provider_business_query_is_blocked_before_login(self):
         settings = {"tools":{"hithink-finance":{"roles":["finance-expert"],"installed":True,"authenticated":False,"command":["node","client"]}}}
         with patch("roles.tools.load_role", return_value=self.role), patch("roles.tools.configuration", return_value=settings), patch("roles.tools.subprocess.run") as run:

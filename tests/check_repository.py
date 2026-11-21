@@ -16,7 +16,8 @@ from knowledge.graph_build import build_indexes, check_indexes, index_records, l
 
 
 def main() -> int:
-    python_files = list(CORE.rglob("*.py")) + list((REPO / "tests").glob("*.py"))
+    # 角色历史项目和第三方技能是导入资料，由迁移清单另行静态核验，不当作框架源码。
+    python_files = list((CORE / "scripts").rglob("*.py")) + list((REPO / "tests").glob("*.py"))
     for path in python_files:
         ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
     config = load_graph_config(CORE)
