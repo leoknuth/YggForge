@@ -26,6 +26,7 @@ def parser():
             child.add_argument("--task", default="")
             child.add_argument("--project-id", default="")
             child.add_argument("--tag", action="append", default=[])
+            child.add_argument("--skill", action="append", default=[])
         if action == "run":
             child.add_argument("--backend", choices=["prepare", "codex"])
             child.add_argument("--isolation", choices=["logical", "enforced"])
@@ -33,6 +34,10 @@ def parser():
     commit = commands.add_parser("commit")
     commit.add_argument("role_ids", nargs="+")
     commit.add_argument("--push", action="store_true")
+    tool = commands.add_parser("tool")
+    tool.add_argument("role_id")
+    tool.add_argument("name")
+    tool.add_argument("arguments", nargs=argparse.REMAINDER)
     return root
 
 
@@ -41,6 +46,12 @@ def main():
     try:
         if args.action == "list":
             result = {"roles": list_roles()}
+        elif args.action == "tool":
+            from roles.tools import run_tool
+            values = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
+            result = run_tool(args.role_id, args.name, values)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return result["exit_code"]
         elif args.action == "create":
             role = create_role(args.role_id, args.name, args.description)
             from backends.role_memory import refresh_role_memory
@@ -59,6 +70,8 @@ def main():
         else:
             from roles.loader import load_task, prepare_context
             task = load_task(args.task_file, args.task, args.project_id, args.tag)
+            if args.skill:
+                task["skills"] = args.skill
             if args.action == "prepare":
                 result = prepare_context(args.role_id, task).as_dict()
             else:

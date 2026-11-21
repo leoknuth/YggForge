@@ -212,8 +212,51 @@ def _is_canonical_role_memory_path(path: Path) -> bool:
     )
 
 
+def _valid_role_directory(value: str) -> bool:
+    """只识别实际角色 ID，根级说明和下划线模板目录不是私有角色。"""
+    return len(value) <= 80 and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", value) is not None
+
+
+def _is_role_data_path(relative: Path) -> bool:
+    """角色配置、项目、技能和档案与记忆采用相同私有存储边界。"""
+    parts = tuple(part.casefold() for part in relative.parts)
+    if parts and parts[0] == "yggforge-core":
+        parts = parts[1:]
+    return len(parts) >= 2 and parts[0] == "roles" and _valid_role_directory(parts[1])
+
+
+def _is_canonical_role_data_path(path: Path) -> bool:
+    """发布根缩到某个角色或项目内时，仍保护整个规范角色目录。"""
+    parts = tuple(part.casefold() for part in path.parts)
+    return any(
+        parts[index] == "yggforge-core"
+        and parts[index + 1] == "roles"
+        and _valid_role_directory(parts[index + 2])
+        for index in range(len(parts) - 2)
+    )
+
+
+def _private_role_reason(relative: Path, real_relative: Path, lexical: Path, resolved: Path) -> Optional[str]:
+    """保留既有记忆理由；其它角色私有文件使用独立理由代码。"""
+    if (
+        _is_role_memory_path(relative)
+        or _is_role_memory_path(real_relative)
+        or _is_canonical_role_memory_path(lexical)
+        or _is_canonical_role_memory_path(resolved)
+    ):
+        return "ROLE_MEMORY"
+    if (
+        _is_role_data_path(relative)
+        or _is_role_data_path(real_relative)
+        or _is_canonical_role_data_path(lexical)
+        or _is_canonical_role_data_path(resolved)
+    ):
+        return "ROLE_DATA"
+    return None
+
+
 def _checked_path(path: Path, root: Path) -> Tuple[Optional[Path], Optional[str]]:
-    """同时检查词法与真实路径，阻止越界及运行数据、角色记忆的链接绕行。"""
+    """同时检查词法与真实路径，阻止越界及整个角色私有目录的链接绕行。"""
     root = root.resolve()
     candidate = path if path.is_absolute() else root / path
     try:
@@ -225,18 +268,17 @@ def _checked_path(path: Path, root: Path) -> Tuple[Optional[Path], Optional[str]
         return None, "PATH_ESCAPE"
     if any(part in EXCLUDED_DIRECTORIES for part in relative.parts + real_relative.parts):
         return None, "EXCLUDED_PATH"
+    role_reason = _private_role_reason(relative, real_relative, lexical, resolved)
     if candidate.is_dir():
+        if role_reason:
+            # 不递归读取目录链接；记录真实目录供选中的外部子文件继承私有边界。
+            return resolved, role_reason
         return None, "SYMLINK_DIRECTORY" if candidate.is_symlink() else "NOT_FILE"
     if not candidate.is_file():
         return None, "NOT_FILE"
-    if (
-        _is_role_memory_path(relative)
-        or _is_role_memory_path(real_relative)
-        or _is_canonical_role_memory_path(lexical)
-        or _is_canonical_role_memory_path(resolved)
-    ):
+    if role_reason:
         # 保留已验证真实路径，仅供发布选择器提取私有附件引用，拒绝发布本文件。
-        return resolved, "ROLE_MEMORY"
+        return resolved, role_reason
     return resolved, None
 
 
@@ -425,10 +467,13 @@ def select_files(
     entry_ids = {}
     for path in contexts:
         checked, reason = _checked_path(path, root)
-        if reason and reason != "ROLE_MEMORY":
+        if reason and reason not in {"ROLE_MEMORY", "ROLE_DATA"}:
             continue
-        if reason == "ROLE_MEMORY" and not (
-            _is_role_memory_path(checked.relative_to(root)) or _is_canonical_role_memory_path(checked)
+        if reason in {"ROLE_MEMORY", "ROLE_DATA"} and not (
+            _is_role_data_path(checked.relative_to(root))
+            or _is_canonical_role_data_path(checked)
+            or _is_role_memory_path(checked.relative_to(root))
+            or _is_canonical_role_memory_path(checked)
         ):
             # 角色目录内的文件链接指向外部附件时，附件的其它别名同样保持私有。
             private_assets.add(checked)
@@ -452,7 +497,7 @@ def select_files(
                     }
                 except (OSError, UnicodeError, ValueError):
                     pass
-        if inspections[path].reason in {"PRIVACY_TAG", "SENSITIVE_MARKER", "METADATA_INVALID", "FORBIDDEN_TERM", "ROLE_MEMORY"}:
+        if inspections[path].reason in {"PRIVACY_TAG", "SENSITIVE_MARKER", "METADATA_INVALID", "FORBIDDEN_TERM", "ROLE_MEMORY", "ROLE_DATA"}:
             private_assets.update(references[checked])
     # 私密附件若引用其它附件，继续传播；不会向未引用的条目广播标签。
     pending = list(private_assets)

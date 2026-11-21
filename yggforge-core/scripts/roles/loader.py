@@ -20,7 +20,7 @@ def load_task(task_file: Optional[Path] = None, prompt: str = "", project_id: st
     task = json.loads(Path(task_file).read_text(encoding="utf-8-sig")) if task_file else {}
     if not isinstance(task, dict):
         raise RoleError("任务必须是 JSON 对象。")
-    allowed = {"task_id", "prompt", "project_id", "tags", "project_root", "files", "roles", "dependencies"}
+    allowed = {"task_id", "prompt", "project_id", "tags", "project_root", "files", "roles", "dependencies", "skills"}
     if set(task) - allowed:
         raise RoleError("任务包含未支持字段: " + ", ".join(sorted(set(task) - allowed)))
     task["prompt"] = prompt or str(task.get("prompt", ""))
@@ -67,6 +67,8 @@ def _read_hits_locked(index: KnowledgeGraphIndex, tags: Sequence[str], limit: in
 def prepare_context(role_id: str, task: Dict[str, Any], core_root: Optional[Path] = None) -> ContextBundle:
     core = Path(core_root or CORE_ROOT).resolve()
     role = load_role(role_id, core)
+    from roles.skills import select
+    skill_catalog, selected_skills = select(role, task)
     own = role_space(role_id, core)
     from backends.role_memory import refresh_role_memory, role_summary_status
     def own_context():
@@ -89,18 +91,26 @@ def prepare_context(role_id: str, task: Dict[str, Any], core_root: Optional[Path
         shared_hits = shared_job.result()
         summary, own_hits = own_job.result()
     files = []
-    project_root = Path(task["project_root"]).resolve() if task.get("project_root") else None
-    if project_root and (core / "roles").resolve() in (project_root, *project_root.parents):
+    registered_project = role.projects.get(task.get("project_id", ""))
+    project_root = Path(task["project_root"]).resolve() if task.get("project_root") else registered_project["root"] if registered_project else None
+    own_project = bool(registered_project and project_root and (project_root == registered_project["root"] or registered_project["root"] in project_root.parents))
+    if project_root and (core / "roles").resolve() in (project_root, *project_root.parents) and not own_project:
         raise RoleError("任务项目根不能是角色私有目录。")
-    for value in task.get("files", []):
+    for file_index, value in enumerate(task.get("files", [])):
         if project_root is None:
             raise RoleError("读取任务文件必须显式提供 project_root。")
         path = inside(project_root / str(value), project_root)
-        if (core / "roles").resolve() in path.parents:
+        if (core / "roles").resolve() in path.parents and not own_project:
             raise RoleError("任务资料不能直接引用角色私有目录。")
-        if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
+        if not path.is_file() or path.stat().st_size > 32 * 1024 * 1024:
             raise RoleError("任务资料缺失或过大。")
-        files.append({"name": path.name, "text": path.read_text(encoding="utf-8-sig")})
+        snapshot = "project/" + path.relative_to(registered_project["root"]).as_posix() if own_project else "inputs/" + str(file_index) + "-" + path.name
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".xlsx", ".xls", ".docx"}:
+            files.append({"name": path.name, "kind": "asset", "source_path": str(path), "snapshot_path": snapshot, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "bytes": path.stat().st_size})
+        else:
+            if path.stat().st_size > 2 * 1024 * 1024:
+                raise RoleError("文本资料过大，请先形成任务窗口或摘要。")
+            files.append({"name": path.name, "kind": "text", "snapshot_path": snapshot, "text": path.read_text(encoding="utf-8-sig")})
     clean_task = {key: value for key, value in task.items() if key not in {"project_root", "files", "roles", "dependencies"}}
     clean_task["assigned_role"] = role.id
     clean_task["files"] = files
@@ -113,4 +123,10 @@ def prepare_context(role_id: str, task: Dict[str, Any], core_root: Optional[Path
             data = path.read_text(encoding="utf-8-sig")
             common.append({"path": path.name if project_root and path.parent == project_root else "profiles/common/behavior-packs/karpathy-guidelines.md", "body": data[:16000], "source_fingerprint": hashlib.sha256(data.encode("utf-8")).hexdigest()})
     metadata = role.metadata()
-    return ContextBundle(context, metadata, clean_task, role.entry.read_text(encoding="utf-8-sig"), role.identity.read_text(encoding="utf-8-sig"), [{"path": reference, "body": path.read_text(encoding="utf-8-sig")[:8192]} for reference, path in zip(metadata["skills"], role.skills)], summary, shared_hits, own_hits, common)
+    context_files = [{"path": path.relative_to(role.root).as_posix(), "body": path.read_text(encoding="utf-8-sig")[:12000], "truncated": len(path.read_text(encoding="utf-8-sig")) > 12000} for path in role.context_files]
+    project_state = {}
+    if registered_project:
+        text = registered_project["state"].read_text(encoding="utf-8-sig")
+        project_state = {"project_id": task["project_id"], "path": registered_project["state"].relative_to(role.root).as_posix(), "body": text[:12000], "truncated": len(text) > 12000, "verification": "project-state-is-context-not-confirmed-fact", "files": [path.relative_to(registered_project["root"]).as_posix() for path in sorted(registered_project["root"].rglob("*")) if path.is_file() and not path.is_symlink()][:150]}
+    from roles.tools import catalog as tool_catalog
+    return ContextBundle(context, metadata, clean_task, role.entry.read_text(encoding="utf-8-sig"), role.identity.read_text(encoding="utf-8-sig"), selected_skills, summary, shared_hits, own_hits, common, skill_catalog, context_files, project_state, tool_catalog(role.id))

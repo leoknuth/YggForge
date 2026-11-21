@@ -102,11 +102,79 @@ class PublicationPrivacyTests(unittest.TestCase):
                 self.assertEqual(decisions[name].reason, "ROLE_MEMORY")
                 self.assertFalse(decisions[name].eligible)
         config = self.write("yggforge-core/roles/finance-expert/AGENTS.md", "角色工作约定")
-        self.assertTrue(evaluate_file(config, self.root).allowed)
+        self.assertEqual(evaluate_file(config, self.root).reason, "ROLE_DATA")
         nearby = self.write("roles/finance-expert/memories-template/guide.md", "模板说明")
-        self.assertTrue(evaluate_file(nearby, self.root).allowed)
+        self.assertEqual(evaluate_file(nearby, self.root).reason, "ROLE_DATA")
+        template = self.write("roles/_templates/financing/guide.md", "框架模板")
+        self.assertTrue(evaluate_file(template, self.root).allowed)
         document = self.write("docs/roles/finance-expert/memories/guide.md", "目录示例")
         self.assertTrue(evaluate_file(document, self.root).allowed)
+
+    def test_role_projects_profiles_skills_and_config_are_private_without_tags(self):
+        names = [
+            "yggforge-core/roles/finance-expert/projects/project.json",
+            "yggforge-core/roles/finance-expert/USER.md",
+            "yggforge-core/roles/finance-expert/role.yaml",
+            "yggforge-core/roles/finance-expert/skills/analysis/SKILL.md",
+            "roles/legal-expert/projects/case.json",
+            "YGGFORGE-CORE/ROLES/FINANCE-EXPERT/TOOLS.md",
+        ]
+        for name in names:
+            with self.subTest(path=name):
+                path = self.write(name, "{}")
+                self.assertEqual(evaluate_file(path, self.root).reason, "ROLE_DATA")
+                decisions = dict(select_files(self.root, [path], approved_items=[name], framework_paths=[Path(name).parent]))
+                self.assertEqual(decisions[name].reason, "ROLE_DATA")
+                self.assertFalse(decisions[name].eligible)
+        for name in ("yggforge-core/roles/README.md", "yggforge-core/scripts/roles/registry.py", "knowledge/templates/roles/finance-expert/guide.md"):
+            self.assertTrue(evaluate_file(self.write(name, "框架说明"), self.root).allowed)
+
+    def test_role_data_cannot_change_publication_root(self):
+        name = "yggforge-core/roles/finance-expert/projects/research/STATE.md"
+        path = self.write(name, "项目状态")
+        for root in (self.root, self.root / "yggforge-core", path.parents[2], path.parents[1], path.parent):
+            with self.subTest(root=root):
+                relative = path.relative_to(root).as_posix()
+                self.assertEqual(evaluate_file(path, root).reason, "ROLE_DATA")
+                self.assertEqual(dict(select_files(root, approved_items=[relative], framework_paths=[path.parent]))[relative].reason, "ROLE_DATA")
+
+    def test_role_profile_attachment_references_inherit_privacy(self):
+        self.write("assets/figure.png", b"asset")
+        self.write("assets/linked.png", b"asset")
+        self.write("assets/data.json", '{"assets":["linked.png"]}')
+        self.write("yggforge-core/roles/finance-expert/USER.md", "![图](../../../assets/figure.png)\n[data](../../../assets/data.json)\n")
+        decisions = dict(select_files(self.root, [Path("assets/figure.png"), Path("assets/linked.png"), Path("assets/data.json")], approved_items=["assets/figure.png", "assets/linked.png", "assets/data.json"], framework_paths=[Path("assets")]))
+        for name in ("assets/figure.png", "assets/linked.png", "assets/data.json"):
+            self.assertEqual(decisions[name].reason, "INHERITED_PRIVACY")
+            self.assertFalse(decisions[name].allowed)
+
+    def test_role_project_alias_and_external_asset_alias_are_private(self):
+        private = self.write("yggforge-core/roles/finance-expert/projects/result.json", "{}")
+        external = self.write("assets/result.json", "{}")
+        public_alias = self.root / "framework/project.json"
+        public_alias.parent.mkdir()
+        private_alias = self.root / "yggforge-core/roles/finance-expert/projects/external.json"
+        try:
+            public_alias.symlink_to(private)
+            private_alias.symlink_to(external)
+        except OSError:
+            self.skipTest("当前平台无创建符号链接权限")
+        self.assertEqual(evaluate_file(public_alias, self.root).reason, "ROLE_DATA")
+        decisions = dict(select_files(self.root, [public_alias, external], approved_items=["framework/project.json", "assets/result.json"], framework_paths=[Path("framework"), Path("assets")]))
+        self.assertEqual(decisions["framework/project.json"].reason, "ROLE_DATA")
+        self.assertEqual(decisions["assets/result.json"].reason, "INHERITED_PRIVACY")
+
+    def test_role_project_directory_alias_protects_selected_external_children(self):
+        asset = self.write("assets/project/data.json", "{}")
+        alias = self.root / "yggforge-core/roles/finance-expert/projects/shared-assets"
+        alias.parent.mkdir(parents=True)
+        try:
+            alias.symlink_to(self.root / "assets/project", target_is_directory=True)
+        except OSError:
+            self.skipTest("当前平台无创建符号链接权限")
+        self.assertEqual(evaluate_file(alias, self.root).reason, "ROLE_DATA")
+        decision = dict(select_files(self.root, [asset], framework_paths=[Path("assets")]))["assets/project/data.json"]
+        self.assertEqual(decision.reason, "INHERITED_PRIVACY")
 
     def test_canonical_role_memory_cannot_change_publication_root(self):
         name = "yggforge-core/roles/finance-expert/memories/cases/note.md"

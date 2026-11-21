@@ -8,6 +8,7 @@ import subprocess
 import sys
 import re
 import signal
+import hashlib
 from typing import Any, Dict
 
 from lib.repo_paths import HOST_ID, HOST_RUNTIME_ROOT
@@ -84,13 +85,46 @@ def execute(bundle: ContextBundle, backend: str = None, isolation: str = None, t
     for index, skill in enumerate(bundle.skills):
         relative = skill["path"] if skill["path"].startswith("skills/") else "skills/shared-" + str(index) + "/SKILL.md"
         snapshot(relative, skill["body"])
+        resource_root = Path(skill.get("resource_root", ".")).resolve()
+        resource_base = (workspace / relative).parent
+        for raw in skill.get("resource_paths", []):
+            source = Path(raw)
+            if source.is_symlink():
+                raise RoleError("技能资源不能是链接。")
+            try:
+                resource = source.resolve().relative_to(resource_root)
+            except ValueError as exc:
+                raise RoleError("技能资源越界。") from exc
+            if source.stat().st_size > 64 * 1024 * 1024:
+                raise RoleError("技能资源过大，需按任务另行处理。")
+            target = resource_base / resource
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+    for item in bundle.context_files:
+        snapshot(item["path"], item["body"])
+    if bundle.project_state:
+        snapshot("project/STATE.md", bundle.project_state["body"])
     snapshot("memories/summary.md", bundle.role_summary["body"])
     for group, prefix in ((bundle.shared_hits, "shared/"), (bundle.role_hits, "memories/")):
         for hit in group:
             metadata = {key: hit[key] for key in ("space_id", "entry_id", "status", "confidence", "project_id", "source_fingerprint", "truncated")}
             snapshot(prefix + hit["path"], render_with_front_matter(metadata, hit["body"]))
     for index, item in enumerate(bundle.task.get("files", [])):
-        snapshot("inputs/" + str(index) + "-" + Path(item["name"]).name, item["text"])
+        relative = item.get("snapshot_path") or "inputs/" + str(index) + "-" + Path(item["name"]).name
+        if item.get("kind") == "asset":
+            source = Path(item["source_path"])
+            data = source.read_bytes()
+            if hashlib.sha256(data).hexdigest() != item["sha256"]:
+                raise RoleError("任务资产在准备后已修改，请重新加载。")
+            target = workspace / relative
+            try:
+                target.resolve().relative_to(workspace.resolve())
+            except ValueError as exc:
+                raise RoleError("任务资产快照路径越界。") from exc
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        else:
+            snapshot(relative, item["text"])
     prompt = bundle.prompt()
     (workspace / "prompt.txt").write_text(prompt, encoding="utf-8")
     result = {"role_id": bundle.context.role_id, "run_id": bundle.context.run_id, "task_id": bundle.context.task_id, "project_id": bundle.context.project_id, "host_id": HOST_ID, "backend": backend, "workspace": str(workspace), "isolation": isolation, "status": "prepared"}

@@ -69,3 +69,6 @@ for relative_path, decision in select_files(
 发布库不承诺通用秘密识别，标签维护仍是发布方的责任。Markdown YAML 仅解析标签所需的小型子集；复杂别名或不支持的标签表达式会拒绝发布。结构化元数据读取上限为 16 MiB，超过上限需拆分或显式审查。
 
 选择清单生成后到复制之间可能发生文件变更。调用方应固定版本，或在复制前复核文件内容与路径；不要把旧清单当作永久授权。
+
+
+实际角色目录的私有边界覆盖配置、档案、skills和projects，理由ROLE_DATA；memories保留ROLE_MEMORY。scripts/roles、根roles/README及模板不属于实际角色数据。缩小根、别名和附件不能绕过。

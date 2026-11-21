@@ -6,3 +6,7 @@
 *.json text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# 角色导入资料保持原字节，便于跨平台按来源指纹复核。
+yggforge-core/roles/*/projects/** -text whitespace=-blank-at-eol,-blank-at-eof
+yggforge-core/roles/*/skills/** -text whitespace=-blank-at-eol,-blank-at-eof

@@ -1,6 +1,6 @@
 """校验角色注册与管理者共享范围，不从模型声明推导权限。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import re
 from pathlib import Path
@@ -71,6 +71,8 @@ class Role:
     skills: Tuple[Path, ...]
     shared_paths: Tuple[str, ...]
     retrieval: Dict[str, int]
+    context_files: Tuple[Path, ...] = ()
+    projects: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def metadata(self) -> Dict[str, Any]:
         references = []
@@ -79,7 +81,7 @@ class Role:
                 references.append(path.relative_to(self.root).as_posix())
             except ValueError:
                 references.append("shared:" + path.relative_to(self.root.parent.parent).as_posix())
-        return {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "skills": references, "shared_paths": list(self.shared_paths)}
+        return {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "skills": references, "shared_paths": list(self.shared_paths), "context_files": [path.relative_to(self.root).as_posix() for path in self.context_files], "projects": list(self.projects)}
 
 
 def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
@@ -150,8 +152,29 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
     summary = data.get("memory", {}).get("summary", "memories/summary.md")
     if summary != "memories/summary.md":
         raise RoleError("角色摘要固定保存到自身 memories/summary.md。")
+    context_files = []
+    for relative in data.get("context_files", []):
+        path = inside(root / relative, root)
+        if not path.is_file() or path.stat().st_size > 32768:
+            raise RoleError("角色补充设定缺失或过长。")
+        context_files.append(path)
+    projects = {}
+    for project_id, value in data.get("projects", {}).items():
+        validate_role_id(project_id)
+        relative = value["path"]
+        if not relative.replace("\\", "/").startswith("projects/"):
+            raise RoleError("项目必须保存在自身 projects/。")
+        directory = inside(root / relative, inside(root / "projects", root))
+        state = inside(directory / value.get("state", "STATE.md"), directory)
+        if not directory.is_dir() or not state.is_file():
+            raise RoleError("项目目录或 STATE.md 缺失: " + project_id)
+        projects[project_id] = {"root": directory, "state": state, "path": relative}
+    skill_limit = retrieval.get("skill_limit", 4)
+    if not isinstance(skill_limit, int) or isinstance(skill_limit, bool) or not 1 <= skill_limit <= 20:
+        raise RoleError("skill_limit 需为 1 至 20 的整数。")
+    retrieval["skill_limit"] = skill_limit
     role_space(role_id, core)
-    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval)
+    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval, tuple(context_files), projects)
 
 
 def list_roles(core_root: Optional[Path] = None) -> List[Dict[str, Any]]:

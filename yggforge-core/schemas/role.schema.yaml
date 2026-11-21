@@ -71,6 +71,12 @@
           "minimum": 512,
           "maximum": 200000,
           "description": "每路检索正文的字符预算；摘要、角色入口和技能另行限定"
+        },
+        "skill_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "自动激活技能上限，显式skills请求另行验证"
         }
       },
       "required": [
@@ -116,6 +122,18 @@
         }
       },
       "additionalProperties": false
+    },
+    "context_files": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "description": "可选的角色内补充设定，长期历史不全量放入启动上下文"
+    },
+    "projects": {
+      "type": "object",
+      "description": "固定项目ID映射到自身projects目录和STATE.md；实际路径由注册表校验"
     }
   },
   "additionalProperties": false
