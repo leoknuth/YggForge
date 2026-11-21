@@ -372,7 +372,13 @@ def route_explicit(action: str, rest: List[str]) -> int:
         idx = 0
         while idx < len(rest):
             token = rest[idx]
-            if token == "--title":
+            if token == "--note":
+                # 显式正文参数与自然语言正文等价，参数名不能被写进记忆。
+                idx += 1
+                if idx >= len(rest) or rest[idx].startswith("--"):
+                    raise YggError("`ygg remember --note` requires note text.")
+                note_tokens.append(rest[idx])
+            elif token == "--title":
                 idx += 1
                 if idx >= len(rest):
                     raise YggError("`ygg remember --title` requires a value.")

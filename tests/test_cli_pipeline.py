@@ -32,6 +32,23 @@ distill = load_leaf("test_distill_leaf", "cmds/pipeline/distill.py")
 
 
 class CliRoutesTest(unittest.TestCase):
+    def test_explicit_note_preserves_multiline_text_and_role_scope(self):
+        note = "原始事实\n第二行保留，不把参数名写成正文。"
+        with patch("cli.routes.run_python", return_value=0) as run:
+            route_explicit("remember", ["--role", "example-role", "--project", "example-record",
+                                         "--note", note, "--confidence", "high", "--title", "完整条目", "--yes"])
+        arguments = run.call_args[0][1]
+        self.assertEqual(arguments.count("--note"), 1)
+        self.assertEqual(arguments[arguments.index("--note") + 1], note)
+        self.assertEqual(arguments[arguments.index("--role") + 1], "example-role")
+        self.assertEqual(arguments[arguments.index("--project") + 1], "example-record")
+        self.assertEqual(arguments[arguments.index("--confidence") + 1], "high")
+
+    def test_explicit_note_requires_a_value_before_next_flag(self):
+        for arguments in (["--note"], ["--note", "--title", "标题"]):
+            with self.subTest(arguments=arguments), self.assertRaises(YggError):
+                route_explicit("remember", arguments)
+
     def test_memory_payload_preserves_deploy_word(self):
         self.assertEqual(infer_intent("请帮我记住先验证再部署"), ("remember", ["先验证再部署"]))
 
@@ -129,7 +146,7 @@ class CliRoutesTest(unittest.TestCase):
 
 class SourcePipelineTest(unittest.TestCase):
     def test_ingest_yaml_preserves_quoted_multiline_title(self):
-        title = 'Windows C:\\Users\\example-user\nstatus: active "quoted"'
+        title = 'Windows C:\\Users\\my\nstatus: active "quoted"'
         extracted = {"title": title, "url": "https://example.org/a", "author": "test\\author", "publish_time": "unknown", "images": [], "source_type": "generic", "text": "Body"}
         asset = ingest.CONTENT_ROOT / "knowledge/sources/inbox/assets/example.txt"
         text = ingest.render_inbox_markdown("source-id", extracted, asset, None)
@@ -145,8 +162,8 @@ class SourcePipelineTest(unittest.TestCase):
         self.assertEqual(yaml.safe_load(header)["title"], title)
 
     def test_distilled_yaml_preserves_windows_path(self):
-        title = 'Windows C:\\Users\\example-user "quoted"'
-        entry = {"title": title, "source": "https://example.org/a", "author": "test", "raw_text": "Windows C:\\Users\\example-user 的目录权限需要在部署前进行检查。", "path": str(distill.CONTENT_ROOT / "knowledge/sources/inbox/example.md")}
+        title = 'Windows C:\\Users\\my "quoted"'
+        entry = {"title": title, "source": "https://example.org/a", "author": "test", "raw_text": "Windows C:\\Users\\my 的目录权限需要在部署前进行检查。", "path": str(distill.CONTENT_ROOT / "knowledge/sources/inbox/example.md")}
         text = distill.render_distilled(entry, "example", "source-id")
         from lib.front_matter import parse_front_matter
         metadata, _body = parse_front_matter(text)
