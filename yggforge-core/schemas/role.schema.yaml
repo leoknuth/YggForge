@@ -152,6 +152,11 @@
       },
       "description": "可选的角色内补充设定，长期历史不全量放入启动上下文"
     },
+    "case_template": {
+      "type": "string",
+      "pattern": "^templates/",
+      "description": "本角色新命例工序模板；事实与报告只进records"
+    },
     "records": {
       "type": "object",
       "description": "稳定业务ID映射到自身records目录和STATE.md；项目作用域project_id继续保留",

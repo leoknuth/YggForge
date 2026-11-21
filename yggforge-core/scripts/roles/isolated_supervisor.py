@@ -52,7 +52,7 @@ def main():
             target = native / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(read_regular(source))
-        for folder in ("skills", "memories", "shared", "inputs", "project"):
+        for folder in ("skills", "memories", "shared", "inputs", "project", "record", "references"):
             source = storage / folder
             if not source.is_dir() or source.is_symlink():
                 continue
@@ -64,6 +64,11 @@ def main():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(read_regular(path))
         request = dict(original, workspace=str(native))
+        if original.get("output_path"):
+            output = Path(original["output_path"])
+            if output.is_absolute() or ".." in output.parts or output.parts[:1] != ("outputs",):
+                raise ValueError("命例输出必须在专属 outputs/ 路径。")
+            (native / output).mkdir(parents=True, exist_ok=True)
         request_path = native / "worker-request.json"
         request_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
         worker = Path(__file__).with_name("landlock_worker.py")
@@ -80,7 +85,9 @@ def main():
         count = 0
         for path in native.rglob("*"):
             relative = path.relative_to(native)
-            if path.is_symlink() or any(part.startswith(".") for part in relative.parts) or relative.parts[0] in {"tmp", "skills", "memories", "shared", "inputs", "project"} or relative.as_posix() in excluded or not path.is_file():
+            if path.is_symlink() or any(part.startswith(".") for part in relative.parts) or relative.parts[0] in {"tmp", "skills", "memories", "shared", "inputs", "project", "record", "references"} or relative.as_posix() in excluded or not path.is_file():
+                continue
+            if original.get("output_path") and not relative.is_relative_to(Path(original["output_path"])):
                 continue
             if path.resolve().relative_to(native) != relative:
                 continue

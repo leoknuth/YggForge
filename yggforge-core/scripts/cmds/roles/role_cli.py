@@ -30,10 +30,23 @@ def parser():
             child.add_argument("--tag", action="append", default=[])
             child.add_argument("--skill", action="append", default=[])
             child.add_argument("--workflow", default="", help="选择本角色注册的完整技能工作流")
+            child.add_argument("--record-id", default="", help="命例正式记录ID，独立于知识project_id")
+            child.add_argument("--track", default="", help="盲阶段的独立轨道")
+            child.add_argument("--stage", choices=["blind", "synthesis", "review"])
         if action == "run":
             child.add_argument("--backend", choices=["prepare", "codex"])
             child.add_argument("--isolation", choices=["logical", "enforced"])
             child.add_argument("--timeout", type=int, default=180)
+    for action in ("case-init", "case-add-track", "case-freeze", "case-check"):
+        child = commands.add_parser(action)
+        child.add_argument("role_id")
+        child.add_argument("case_id")
+        if action == "case-init":
+            child.add_argument("--track", action="append", default=[], help="额外启用模板可选独立专项；默认必选轨道保留")
+        if action in {"case-freeze", "case-add-track"}:
+            child.add_argument("--track", required=True)
+        if action == "case-check":
+            child.add_argument("--require-frozen", action="store_true")
     commit = commands.add_parser("commit")
     commit.add_argument("role_ids", nargs="+")
     commit.add_argument("--push", action="store_true")
@@ -73,9 +86,22 @@ def main():
         elif args.action == "commit":
             from roles.git_store import commit_roles
             result = commit_roles(args.role_ids, args.push)
+        elif args.action in {"case-init", "case-add-track", "case-freeze", "case-check"}:
+            from roles.cases import initialize_case, add_track, freeze_track, check_case, resolve_record
+            role = load_role(args.role_id)
+            if args.action == "case-init":
+                result = initialize_case(role, args.case_id, tracks=args.track)
+            elif args.action == "case-add-track":
+                result = add_track(role, args.case_id, args.track)
+            else:
+                _record_id, record = resolve_record(role, args.case_id)
+                result = freeze_track(record["root"], args.track) if args.action == "case-freeze" else check_case(record["root"], args.require_frozen)
         else:
             from roles.loader import load_task, prepare_context
             task = load_task(args.task_file, args.task, args.project_id, args.tag, args.workflow)
+            for field in ("record_id", "track", "stage"):
+                if getattr(args, field):
+                    task[field] = getattr(args, field)
             if args.skill:
                 task["skills"] = args.skill
             if args.action == "prepare":

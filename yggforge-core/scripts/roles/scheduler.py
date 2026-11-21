@@ -14,7 +14,7 @@ def run_role(role_id: str, task: Dict[str, Any], backend: str = None, isolation:
     backend, isolation = execution_settings(backend, isolation)
     bundle = prepare_context(role_id, task, core_root)
     result = execute(bundle, backend, isolation, timeout)
-    if result["status"] == "completed":
+    if result["status"] == "completed" and not bundle.case_policy:
         from backends.factory import get_memory_backend
         memory = get_memory_backend(space=role_space(role_id, core_root))
         project = task.get("project_id") or "task:" + task["task_id"]

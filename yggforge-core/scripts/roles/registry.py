@@ -14,6 +14,15 @@ class RoleError(ValueError):
     """角色配置、资料或执行能力不满足要求。"""
 
 
+def validate_record_id(value: str) -> str:
+    """业务稳定ID允许旧下划线代号，不放宽角色与轨道ID。"""
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,95}", value):
+        raise RoleError("case/record ID 只接受小写ASCII字母、数字、连字符和下划线。")
+    if value in {"con", "prn", "aux", "nul"} or re.fullmatch(r"(?:com|lpt)[1-9]", value):
+        raise RoleError("case/record ID 不能是Windows保留设备名。")
+    return value
+
+
 def validate_schema(value, schema, location="role"):
     """执行本角色契约使用的 JSON Schema 子集，不依赖外部校验包。"""
     if "const" in schema and value != schema["const"]:
@@ -78,6 +87,7 @@ class Role:
     tags: Tuple[str, ...] = ()
     default_skills: Tuple[str, ...] = ()
     skill_workflows: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+    case_template: Optional[Path] = None
 
     def metadata(self) -> Dict[str, Any]:
         references = []
@@ -86,7 +96,10 @@ class Role:
                 references.append(path.relative_to(self.root).as_posix())
             except ValueError:
                 references.append("shared:" + path.relative_to(self.root.parent.parent).as_posix())
-        return {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "tags": list(self.tags), "skills": references, "default_skills": list(self.default_skills), "skill_workflows": {key: list(value) for key, value in self.skill_workflows.items()}, "shared_paths": list(self.shared_paths), "context_files": [path.relative_to(self.root).as_posix() for path in self.context_files], "records": list(self.records)}
+        result = {"id": self.id, "name": self.name, "revision": self.revision, "description": self.description, "tags": list(self.tags), "skills": references, "default_skills": list(self.default_skills), "skill_workflows": {key: list(value) for key, value in self.skill_workflows.items()}, "shared_paths": list(self.shared_paths), "context_files": [path.relative_to(self.root).as_posix() for path in self.context_files], "records": list(self.records)}
+        if self.case_template:
+            result["case_template"] = self.case_template.relative_to(self.root).as_posix()
+        return result
 
 
 def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
@@ -174,7 +187,7 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
     if not isinstance(raw_records, dict):
         raise RoleError("records 必须是业务 ID 与目录配置的映射。")
     for record_id, value in raw_records.items():
-        validate_role_id(record_id)
+        validate_record_id(record_id)
         if not isinstance(value, dict) or set(value) - {"path", "state"} or not isinstance(value.get("path"), str):
             raise RoleError("记录配置只接受 path 与 state: " + record_id)
         relative = normalize_allowed_paths([value["path"]])[0]
@@ -218,7 +231,15 @@ def load_role(role_id: str, core_root: Optional[Path] = None) -> Role:
             raise RoleError("工作流必须引用本角色已注册技能: " + workflow_id)
         if len(set(values)) != len(values):
             raise RoleError("工作流不允许重复技能: " + workflow_id)
-    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval, tuple(context_files), records, tuple(tags), tuple(default_skills), {key: tuple(value) for key, value in workflows.items()})
+    case_template = None
+    if data.get("case_template"):
+        relative = normalize_allowed_paths([data["case_template"]])[0]
+        if not relative.startswith("templates/"):
+            raise RoleError("case_template 必须位于本角色 templates/。")
+        case_template = inside(root / relative, root)
+        if not case_template.is_file():
+            raise RoleError("命例模板缺失。")
+    return Role(role_id, data["name"].strip(), revision, data["description"].strip(), root, entry, identity, tuple(skills), requested, retrieval, tuple(context_files), records, tuple(tags), tuple(default_skills), {key: tuple(value) for key, value in workflows.items()}, case_template)
 
 
 def list_roles(core_root: Optional[Path] = None) -> List[Dict[str, Any]]:

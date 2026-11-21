@@ -55,7 +55,9 @@ ygg role run <role-id> --task-file <task.json> --workflow <workflow-id> --backen
 
 ## 准备角色与记录上下文
 
-任务 JSON 支持 task_id、prompt、project_id、tags、project_root、files、skills、workflow，以及联合任务的 roles、dependencies。tags 必须来自当前任务。
+分轨独立命例使用显式 `record_id`、`track`、`stage` 与标准 CASE 清单，流程见 [分轨命例与独立分析](role-cases.md)。该模式将资料、方法记忆和安全设定投影为本轨白名单，全部轨道冻结后才综合；一般角色任务仍按下述完整上下文契约执行。
+
+任务 JSON 支持 task_id、prompt、project_id、tags、project_root、files、skills、workflow，以及联合任务的 roles、dependencies；标准分轨命例另外使用 record_id、track、stage、references。tags 必须来自当前任务。
 
 `role.yaml.records` 用固定 ID 映射 `records/<类别>/<实体>/` 和 STATE。`project_id` 匹配自身已注册记录时恢复 `record_state`，可省略 project_root；它仍是内部知识作用域字段。外部代码项目继续用显式 project_root，API 字段不因业务目录改名而改成另一套名称。
 

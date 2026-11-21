@@ -126,7 +126,19 @@ def run_codex(request) -> int:
     (cwd / "tmp").mkdir(exist_ok=True)
     env = dict(os.environ, CODEX_HOME=str(home), TMPDIR=str(cwd / "tmp"), TMP=str(cwd / "tmp"), TEMP=str(cwd / "tmp"))
     read_only = ["/usr", "/bin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/passwd", "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom", str(codex.parent)]
-    restrict_filesystem(read_only, [cwd])
+    writable = [cwd]
+    if request.get("output_path"):
+        output = Path(request["output_path"])
+        if output.is_absolute() or ".." in output.parts or output.parts[:1] != ("outputs",):
+            raise RuntimeError("分术输出路径不合法。")
+        target = cwd / output
+        target.mkdir(parents=True, exist_ok=True)
+        final = cwd / "final.txt"
+        final.touch()
+        # 父级只授予读权限，写权限仅加在本轨成果和执行器内部目录。
+        read_only.append(str(cwd))
+        writable = [target, home, cwd / "tmp", final]
+    restrict_filesystem(read_only, writable)
     argv = [str(codex), "exec", "--ephemeral", "--ignore-rules", "--skip-git-repo-check", "--sandbox", "workspace-write", "-c", 'approval_policy="never"', "-c", 'shell_environment_policy.inherit="none"', "--json", "-C", str(cwd), "-o", str(cwd / "final.txt"), "-"]
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", start_new_session=True)
     process.stdin.write(request["prompt"])
@@ -181,6 +193,12 @@ def main():
         for path in request.get("child_attempts", []):
             child = subprocess.run(["/bin/cat", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             results["child:" + path] = "allowed" if child.returncode == 0 else "denied"
+        for path in request.get("write_attempts", []):
+            try:
+                Path(path).write_text("文件范围写入探测", encoding="utf-8")
+                results["write:" + path] = "allowed"
+            except PermissionError:
+                results["write:" + path] = "denied"
         print(json.dumps(results))
         return 0
     provider_environment = Path.home() / ".config/codex/provider-env.sh"
