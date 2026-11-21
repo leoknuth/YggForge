@@ -1,6 +1,6 @@
 ﻿# 伙伴角色使用指南
 
-日期：20261120。命令从仓库根运行；以命令帮助、角色检查和运行收据判断实际执行状态。
+更新日期：20261121。命令从仓库根运行；以命令帮助、角色检查和运行收据判断实际执行状态。
 
 ## 目录
 
@@ -41,7 +41,7 @@ ygg role prepare legal-expert --task-file docs/examples/roles/financing-task.jso
 
 prepare 不执行模型。当前聊天的主代理可把准备好的上下文交给对应 subagent；实际结果与准备收据分别记录。
 
-task 文件接受 task_id、prompt、project_id、tags、roles、dependencies、project_root、files。读取资料时须显式给出 project_root，files 为该根内相对路径；任务资料不能指向角色私有目录。
+task 文件接受 task_id、prompt、project_id、tags、roles、dependencies、project_root、files、skills。自身已注册项目可通过 project_id 选择并省略 project_root；外部项目须显式给出 project_root。files 为项目根内明确选定的相对路径，保留原目录层次；任务资料不能指向另一角色目录或自身的非项目私有目录。skills 可显式选择本次使用的技能。
 
 ## 图、检索与记忆
 
@@ -105,9 +105,9 @@ ygg role commit finance-expert legal-expert --push
 - 图或摘要过期：刷新本角色来源与索引，不把旧摘要当最新事实。
 - 写锁超时：检查其它宿主的更新，不直接删其他写入者的锁。
 - 执行失败：保留实际 backend 和错误，不将 prepare 当模型完成。
-- 公共发布：memories 和附件固定拒绝；私有 Git 由协调者串行保存。
+- 公共发布：实际角色的配置、档案、技能、projects、memories 及其附件固定拒绝；私有 Git 由协调者串行保存。
 
-存储架构图和流程图见 [伙伴角色文档](../concepts/role-partners.md)。
+角色空间说明见 [角色知识空间](../concepts/role-spaces.md)；渐进技能、项目资料和工具状态见 [角色资源指南](role-resources.md)。
 
 
 ## 当前验收与限制
