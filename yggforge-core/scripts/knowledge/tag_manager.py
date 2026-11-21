@@ -9,6 +9,7 @@ tag-graph.yaml 使用仓库既有格式：related: [ { tag: x, weight: 1.0 }, ..
 from __future__ import print_function
 
 from pathlib import Path
+import json
 import os
 import tempfile
 from typing import Any, Dict, List, Optional, Set
@@ -84,11 +85,23 @@ class TagManager(object):
             and {key: value for key, value in previous.items() if key != "tags"}
             == {key: value for key, value in self._data.items() if key != "tags"}
         )
-        # 新增标签先尝试追加，原有注释、缩进、换行和节点保持原字节。
+        json_source = False
+        if current is not None:
+            try:
+                json.loads(current)
+            except ValueError:
+                pass
+            else:
+                json_source = True
         with tempfile.TemporaryDirectory(prefix="ygg-tag-stage-") as temporary:
             stage = Path(temporary) / "tag-graph.yaml"
             payload = None
-            if current is not None and only_added:
+            if json_source:
+                # JSON 图必须整图写回，不能在对象结尾追加块式 YAML。
+                payload = (json.dumps(self._data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+                stage.write_bytes(payload)
+            elif current is not None and only_added:
+                # 新增 YAML 标签先尝试追加，原有注释、缩进、换行和节点保持原字节。
                 dump_yaml(stage, {"tags": added})
                 rendered = stage.read_text(encoding="utf-8-sig")
                 if "tags:\n" in rendered:
@@ -101,9 +114,9 @@ class TagManager(object):
                         payload = candidate
             if payload is None:
                 dump_yaml(stage, self._data)
-                if load_yaml(stage) != self._data:
-                    raise RuntimeError("标签图序列化未保留完整数据，已拒绝写入。")
                 payload = stage.read_bytes()
+            if load_yaml(stage) != self._data:
+                raise RuntimeError("标签图序列化未保留完整数据，已拒绝写入。")
             self.tag_graph_path.parent.mkdir(parents=True, exist_ok=True)
             fd, staged = tempfile.mkstemp(prefix=".tag-graph-", dir=str(self.tag_graph_path.parent))
             try:

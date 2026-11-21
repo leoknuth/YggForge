@@ -161,6 +161,11 @@ def load_yaml(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8-sig")
+    # JSON 是标签图的实际输入格式，直接解析以完整保留嵌套元数据。
+    try:
+        return json.loads(text) or {}
+    except ValueError:
+        pass
     if yaml is not None:
         return yaml.safe_load(text) or {}
     name = path.name.lower()
